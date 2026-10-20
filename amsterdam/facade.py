@@ -23,6 +23,10 @@ from .mesh import Frame, LocalBuilder, MeshBuilder, newell_normal, shapely_parts
 
 GABLE_DEPTH = 0.35   # thickness shown at a gable's edges, where it rises free
 
+# "full" for desktop and close-ups; "lite" for the web: glazing bars reduced
+# to one cross, no door panels or cornice consoles, thin trims front-only.
+DETAIL = {"lite": False}
+
 
 # --------------------------------------------------------------------------
 # Styles: what a building's era says about its front.
@@ -191,7 +195,7 @@ class FacadeBuilder:
         self.s = shape
         self.st = style
         self.rng = rng
-        self.lb = LocalBuilder(mesh, shape.frame, uv_scale)
+        self.lb = LocalBuilder(mesh, shape.frame, uv_scale, lite=DETAIL["lite"])
         self.outline = shape.poly
         self.inner = shape.poly
 
@@ -211,7 +215,8 @@ class FacadeBuilder:
             self._gable(gable)
         self.inner = self.outline.buffer(-0.3)
         openings = self._layout(gable)
-        holes = unary_union([box(o[1], o[3], o[2], o[4]) for o in openings]) if openings else None
+        cut = [o for o in openings if not (self.lb.lite and o[0] == "window")]
+        holes = unary_union([box(o[1], o[3], o[2], o[4]) for o in cut]) if cut else None
         wall = self.outline.difference(holes) if holes is not None else self.outline
         self.lb.poly(st.wall, wall, 0.0)
         for o in openings:
@@ -365,7 +370,7 @@ class FacadeBuilder:
             lb.box(st.trim, u0 - 0.05, u1 + 0.05, t - 0.3, t - 0.12, 0.0, 0.24)
             lb.box(st.trim, u0 - 0.1, u1 + 0.1, t - 0.12, t + 0.06, 0.0, 0.4, back=True)
             # Consoles under the cornice.
-            for x in np.linspace(u0 + 0.3, u1 - 0.3, max(2, int((u1 - u0) / 1.2))):
+            for x in [] if self.lb.lite else np.linspace(u0 + 0.3, u1 - 0.3, max(2, int((u1 - u0) / 1.2))):
                 lb.box(st.trim, x - 0.08, x + 0.08, t - 0.62, t - 0.3, 0.0, 0.22)
         else:
             lb.box(st.trim, u0, u1, t - 0.14, t + 0.04, 0.0, 0.07, back=True)
@@ -411,12 +416,24 @@ class FacadeBuilder:
 
     def _window(self, u0, u1, v0, v1, upper):
         st, lb, rng = self.st, self.lb, self.rng
+        if lb.lite:
+            mat = "window_dark" if st.frame == "frame_dark" else "window_white"
+            lb.quad(mat, [(u0, v0, 0.01), (u1, v0, 0.01), (u1, v1, 0.01), (u0, v1, 0.01)],
+                    (0, 0, 1), uv=[(0, 0), (1, 0), (1, 1), (0, 1)])
+            if upper and st.shutter and rng.random() < 0.8:
+                w = (u1 - u0) / 2
+                for a, b in ((u0 - w - 0.03, u0 - 0.03), (u1 + 0.03, u1 + 0.03 + w)):
+                    if self.outline.contains(box(a, v0, b, v1)):
+                        lb.box(st.shutter, a, b, v0, v1, 0.0, 0.05)
+            return
         R, t = 0.14, 0.07
         self._reveal(u0, u1, v0, v1, R, st.wall)
         lb.quad("glass", [(u0, v0, -R), (u1, v0, -R), (u1, v1, -R), (u0, v1, -R)], (0, 0, 1))
         self._frame_ring(u0, u1, v0, v1, -R, t, 0.07, st.frame)
         iu0, iu1, iv0, iv1 = u0 + t, u1 - t, v0 + t, v1 - t
         cols, rows = st.bars
+        if self.lb.lite:
+            cols, rows = min(cols, 2), min(rows, 1)
         if st.sash:
             mid = iv0 + (iv1 - iv0) * 0.5
             lb.box(st.frame, iu0, iu1, mid - 0.03, mid + 0.03, -R, -R + 0.06, faces="ftb")
@@ -447,7 +464,7 @@ class FacadeBuilder:
         self._bars(u0 + t, u1 - t, dv1, v1 - t, -R, 3, 1, st.frame)
         # Raised panels on the door leaf.
         pw = (u1 - u0 - 2 * t) * 0.32
-        for cx in (u0 + (u1 - u0) * 0.3, u0 + (u1 - u0) * 0.7):
+        for cx in () if self.lb.lite else (u0 + (u1 - u0) * 0.3, u0 + (u1 - u0) * 0.7):
             lb.box(st.door, cx - pw / 2, cx + pw / 2, v0 + 0.25, dv1 - 0.25, -R, -R + 0.03)
         lb.box("frame_dark", u1 - t - 0.16, u1 - t - 0.12, v0 + 1.0, v0 + 1.08, -R, -R + 0.07)
         if stoop:

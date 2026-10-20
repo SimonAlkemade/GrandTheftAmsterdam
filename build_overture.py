@@ -8,6 +8,7 @@ roof_shape, roof_height, class, ...) as read from Overture's GeoParquet.
 import argparse
 import pickle
 import time
+from pathlib import Path
 
 import numpy as np
 from shapely import wkb
@@ -26,8 +27,16 @@ def main(argv=None):
     ap.add_argument("--center", nargs=2, type=float, required=True, metavar=("LAT", "LON"))
     ap.add_argument("--size", nargs=2, type=float, default=(450, 400), metavar=("W", "H"))
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--lite", action="store_true",
+                    help="web weight: simpler windows, 256 px textures")
+    ap.add_argument("--tiles", type=int, default=1,
+                    help="split west to east into this many .glb files (shared origin)")
     ap.add_argument("-o", "--out", default="out/amsterdam.glb")
     a = ap.parse_args(argv)
+    if a.lite:
+        from amsterdam import facade, materials
+        facade.DETAIL["lite"] = True
+        materials.SIZE = 256
     t = time.time()
     cx, cy = (float(v[0]) for v in wgs84_to_rd_np(np.array([a.center[1]]), np.array([a.center[0]])))
     area = box(cx - a.size[0] / 2, cy - a.size[1] / 2, cx + a.size[0] / 2, cy + a.size[1] / 2)
@@ -52,9 +61,20 @@ def main(argv=None):
     ground = ground_with_water((x0 - o[0], y0 - o[1], x1 - o[0], y1 - o[1]),
                                local_water, GROUND_Z - o[2])
     district.nodes.append(("ground", ground, {}))
-    stats = write_glb(a.out, district)
-    print(f"wrote {a.out}: {stats['nodes']} nodes, {stats['triangles']:,} triangles, "
-          f"{stats['bytes'] / 1e6:.1f} MB in {time.time() - t:.0f}s; origin RD {o.tolist()}")
+    from amsterdam.city import District
+    tiles = [District(o) for _ in range(a.tiles)]
+    for node in district.nodes:
+        mesh = node[1].arrays()
+        xs = np.concatenate([m[:, 0] for m in mesh.values()]) if mesh else np.zeros(1)
+        k = 0 if node[0] == "ground" else int((xs.mean() - (x0 - o[0])) / (x1 - x0) * a.tiles)
+        tiles[min(max(k, 0), a.tiles - 1)].nodes.append(node)
+    for i, tile in enumerate(tiles):
+        out = a.out if a.tiles == 1 else a.out.replace(".glb", f"_{i}.glb")
+        Path(out).parent.mkdir(parents=True, exist_ok=True)
+        stats = write_glb(out, tile)
+        print(f"wrote {out}: {stats['nodes']} nodes, {stats['triangles']:,} triangles, "
+              f"{stats['bytes'] / 1e6:.1f} MB")
+    print(f"done in {time.time() - t:.0f}s; origin RD {o.tolist()}")
 
 
 if __name__ == "__main__":

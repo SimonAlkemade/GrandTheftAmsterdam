@@ -1,0 +1,400 @@
+<title>Grachtengordel 3D</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: the city fills the screen; glass panels float at its edges and
+     collapse into a bottom sheet on phones. Colour comes from the canals:
+     water teal for action, quay brick for the selected building. */
+  :root {
+    --sky: #b9cad6;
+    --panel: rgba(247, 248, 245, 0.86);
+    --panel-line: rgba(27, 36, 34, 0.12);
+    --fg: #17201e;
+    --muted: #55625e;
+    --accent: #1d6c63;
+    --accent-ink: #ffffff;
+    --brick: #a8442f;
+    --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+    --font-body: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+    --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+    --radius: 14px;
+    --gap: 12px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --sky: #1c2629; --panel: rgba(18, 24, 23, 0.84); --panel-line: rgba(230, 236, 233, 0.12);
+      --fg: #e6ece9; --muted: #9aa8a3; --accent: #5cc0b2; --accent-ink: #0d1716; --brick: #e27a62;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --sky: #1c2629; --panel: rgba(18, 24, 23, 0.84); --panel-line: rgba(230, 236, 233, 0.12);
+    --fg: #e6ece9; --muted: #9aa8a3; --accent: #5cc0b2; --accent-ink: #0d1716; --brick: #e27a62;
+    color-scheme: dark;
+  }
+  html, body { height: 100%; }
+  body {
+    background: var(--sky); color: var(--fg); font-family: var(--font-body);
+    overflow: hidden; position: relative;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  #scene { position: fixed; inset: 0; display: block; width: 100%; height: 100%; touch-action: none; }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--panel-line); border-radius: var(--radius);
+    backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2);
+    padding: 14px 16px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+  }
+  .hud { position: fixed; z-index: 2; display: flex; flex-direction: column; gap: var(--gap); }
+  .hud.top-left {
+    top: calc(16px + env(safe-area-inset-top, 0px)); left: max(16px, env(safe-area-inset-left, 0px));
+    width: min(360px, calc(100% - 32px));
+  }
+  .hud.bottom {
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    left: max(16px, env(safe-area-inset-left, 0px)); right: max(16px, env(safe-area-inset-right, 0px));
+    flex-direction: row; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+  }
+
+  h1 {
+    font-family: var(--font-display); font-weight: 700; font-size: 1.45rem; line-height: 1.1;
+    margin: 0; letter-spacing: -0.01em; text-wrap: balance;
+  }
+  .lede { margin: 6px 0 0; color: var(--muted); font-size: 0.86rem; line-height: 1.45; }
+  .lede b { color: var(--fg); font-weight: 500; }
+  .coords { font-family: var(--font-data); font-size: 0.72rem; color: var(--muted); margin-top: 8px; font-variant-numeric: tabular-nums; }
+
+  .views { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; }
+  .views button, .chip {
+    font: 500 0.85rem var(--font-body); color: var(--fg); background: transparent;
+    border: 1px solid var(--panel-line); border-radius: 999px; padding: 8px 14px; cursor: pointer;
+    min-height: 36px;
+  }
+  .views button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .views button:focus-visible, input:focus-visible, .chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .sun { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
+  .controls { display: flex; flex-direction: column; gap: 8px; width: min(340px, 100%); }
+  .sun label { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .sun output { font-family: var(--font-data); font-size: 0.85rem; font-variant-numeric: tabular-nums; min-width: 3.2em; text-align: right; }
+  input[type="range"] { width: 100%; accent-color: var(--accent); }
+
+  #info { border-left: 3px solid var(--brick); }
+  #info h2 { font: 700 1rem var(--font-display); margin: 0 0 6px; }
+  #info dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; margin: 0; font-size: 0.82rem; }
+  #info dt { color: var(--muted); }
+  #info dd { margin: 0; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+  #info .close { float: right; margin: -4px -6px 0 8px; }
+
+  .credit { font-size: 0.7rem; color: var(--muted); line-height: 1.4; }
+  .credit a { color: inherit; }
+
+  #loading {
+    position: fixed; inset: 0; z-index: 5; display: grid; place-items: center; background: var(--sky);
+    transition: opacity 0.5s ease;
+  }
+  #loading .panel { width: min(340px, calc(100% - 32px)); }
+  .bar { height: 6px; background: var(--panel-line); border-radius: 3px; overflow: hidden; margin-top: 12px; }
+  .bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.2s; }
+  #loading p { margin: 8px 0 0; font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .hint { font-size: 0.75rem; color: var(--muted); }
+
+  @media (max-width: 640px) {
+    h1 { font-size: 1.2rem; }
+    .lede { display: none; }
+    .hud.bottom { flex-direction: column; align-items: stretch; }
+    .controls { width: auto; }
+    .hint { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { #loading, .bar span { transition: none; } }
+</style>
+
+<canvas id="scene" aria-label="3D model of the Amsterdam canal ring"></canvas>
+
+<div id="loading" role="status">
+  <div class="panel">
+    <h1>Grachtengordel 3D</h1>
+    <div class="bar"><span id="bar"></span></div>
+    <p id="load-text">Loading 469 buildings…</p>
+  </div>
+</div>
+
+<div class="hud top-left">
+  <div class="panel">
+    <h1>Grachtengordel 3D</h1>
+    <p class="lede">A 450 × 400 m slice of Amsterdam's canal ring. <b>Footprints, heights and canals are real</b>
+      (OpenStreetMap via Overture Maps). Facades, roof pitches and building styles are generated.</p>
+    <div class="coords" id="coords">RD —</div>
+  </div>
+  <div class="panel" id="info" hidden>
+    <button class="chip close" id="info-close" aria-label="Close building details">Close</button>
+    <h2 id="info-title">Building</h2>
+    <dl>
+      <dt>Height</dt><dd id="i-h">—</dd>
+      <dt>Footprint</dt><dd id="i-f">—</dd>
+      <dt>Roof</dt><dd id="i-r">—</dd>
+      <dt>RD New</dt><dd id="i-rd">—</dd>
+    </dl>
+  </div>
+</div>
+
+<div class="hud bottom">
+  <div class="panel views" role="group" aria-label="Camera views">
+    <button id="v-overview" data-view="overview" aria-pressed="true">Overview</button>
+    <button id="v-canal-a" data-view="canalA" aria-pressed="false">Canal north</button>
+    <button id="v-canal-b" data-view="canalB" aria-pressed="false">Canal south</button>
+    <button id="v-quay" data-view="quay" aria-pressed="false">On the quay</button>
+  </div>
+  <div class="panel controls">
+    <div class="sun">
+      <label for="time">Sun</label>
+      <input id="time" type="range" min="6" max="21" step="0.25" value="15">
+      <output id="time-out" for="time">15:00</output>
+    </div>
+    <div class="hint">Drag to orbit · right-drag or two fingers to pan · scroll or pinch to zoom · tap a building</div>
+    <div class="credit">© OpenStreetMap contributors, Overture Maps Foundation (ODbL). Model built with the gta-amsterdam facade generator.</div>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { Sky } from 'three/addons/objects/Sky.js';
+
+// Tiles of one district, sharing one origin (RD New, metres). Each is a
+// .glb shipped as base64 text, the binary type the host will serve.
+const TILES = [
+  { url: 'amsterdam_0.txt', bytes: 13547696 },
+  { url: 'amsterdam_1.txt', bytes: 13465472 },
+  { url: 'amsterdam_2.txt', bytes: 11602604 },
+];
+const ORIGIN_RD = [120911.0, 487291.0, -0.6];
+// Camera presets in scene metres: glTF +X east, +Y up, -Z north.
+const VIEWS = {
+  overview: { eye: [150, 110, 230], target: [-10, 0, 10] },
+  canalA:   { eye: [-129.3, 4.1, 164.3], target: [-123.6, 6.6, 64.5] },
+  canalB:   { eye: [-108.1, 4.1, -163.7], target: [-114.9, 6.6, -63.9] },
+  quay:     { eye: [103.3, 2.8, 84.2], target: [101.4, 5.1, 144.5] },
+};
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const canvas = document.getElementById('scene');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.55;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0xb9c8d4, 260, 900);
+const camera = new THREE.PerspectiveCamera(55, 1, 0.5, 4000);
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.maxPolarAngle = Math.PI * 0.495;
+controls.minDistance = 4;
+controls.maxDistance = 900;
+
+const sky = new Sky();
+sky.scale.setScalar(3000);
+sky.material.uniforms.turbidity.value = 5;
+sky.material.uniforms.rayleigh.value = 1.4;
+sky.material.uniforms.mieCoefficient.value = 0.004;
+scene.add(sky);
+const pmrem = new THREE.PMREMGenerator(renderer);
+
+const hemi = new THREE.HemisphereLight(0xd6e2ee, 0x5b5248, 0.55);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff0dc, 3.0);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -260, right: 260, top: 260, bottom: -260, near: 10, far: 1200 });
+sun.shadow.bias = -0.0005;
+sun.shadow.normalBias = 0.05;
+scene.add(sun, sun.target);
+
+// Amsterdam in autumn, roughly: sunrise in the east at 6, high in the south
+// at 13:30, low in the west by 21. Enough to read facades in raking light.
+function setTime(hour) {
+  const t = THREE.MathUtils.clamp((hour - 6) / 15, 0, 1);
+  const elev = THREE.MathUtils.degToRad(3 + 40 * Math.sin(t * Math.PI));
+  const az = THREE.MathUtils.degToRad(THREE.MathUtils.lerp(85, 285, t));
+  const dir = new THREE.Vector3(Math.sin(az) * Math.cos(elev), Math.sin(elev), -Math.cos(az) * Math.cos(elev));
+  sun.position.copy(dir).multiplyScalar(600);
+  sky.material.uniforms.sunPosition.value.copy(dir);
+  const warm = 1 - THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(elev) / 25, 0, 1);
+  sun.color.setRGB(1, 0.94 - 0.28 * warm, 0.86 - 0.45 * warm);
+  sun.intensity = 0.8 + 2.4 * Math.sin(elev);
+  scene.environment?.dispose();
+  scene.environment = pmrem.fromScene(sky, 0.04).texture;
+  const h = Math.floor(hour), m = Math.round((hour - h) * 60);
+  document.getElementById('time-out').textContent = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+resize();
+
+// ---- views -----------------------------------------------------------
+let tween = null;
+function goTo(name) {
+  const v = VIEWS[name];
+  document.querySelectorAll('.views button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === name)));
+  const eye = new THREE.Vector3(...v.eye), target = new THREE.Vector3(...v.target);
+  if (reduceMotion) {
+    camera.position.copy(eye); controls.target.copy(target); controls.update(); return;
+  }
+  tween = { start: performance.now(), e0: camera.position.clone(), t0: controls.target.clone(), e1: eye, t1: target };
+}
+document.querySelectorAll('.views button').forEach(b => b.addEventListener('click', () => goTo(b.dataset.view)));
+controls.addEventListener('start', () => {
+  tween = null;
+  document.querySelectorAll('.views button').forEach(b => b.setAttribute('aria-pressed', 'false'));
+});
+
+// ---- picking -----------------------------------------------------------
+const buildings = [];
+const ray = new THREE.Raycaster();
+const highlight = new THREE.MeshStandardMaterial({
+  color: 0xc0573f, emissive: 0x7a2414, transparent: true, opacity: 0.55, depthWrite: false,
+  polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,   // draw over its own building
+});
+let picked = null, overlay = null, down = null;
+
+canvas.addEventListener('pointerdown', e => { down = [e.clientX, e.clientY]; });
+canvas.addEventListener('pointerup', e => {
+  if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 6) return;
+  const p = new THREE.Vector2((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  ray.setFromCamera(p, camera);
+  const hit = ray.intersectObjects(buildings, false)[0];
+  select(hit ? hit.object.userData.building : null);
+});
+document.getElementById('info-close').addEventListener('click', () => select(null));
+
+function select(group) {
+  if (overlay) { overlay.parent.remove(overlay); overlay = null; }
+  picked = group;
+  const info = document.getElementById('info');
+  if (!group) { info.hidden = true; return; }
+  overlay = new THREE.Group();
+  group.traverse(o => { if (o.isMesh) { const m = new THREE.Mesh(o.geometry, highlight); overlay.add(m); } });
+  group.add(overlay);
+  const box = new THREE.Box3().setFromObject(group);
+  const size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
+  const rd = toRD(c);
+  const pitched = group.userData.gabled;
+  // Houseboats are the only low structures in the model: one storey at water level.
+  document.getElementById('info-title').textContent = size.y < 4.5 ? 'Houseboat' : 'Building';
+  document.getElementById('i-h').textContent = `${size.y.toFixed(1)} m`;
+  document.getElementById('i-f').textContent = `${size.x.toFixed(1)} × ${size.z.toFixed(1)} m`;
+  document.getElementById('i-r').textContent = pitched ? 'Pitched, with gable' : 'Flat';
+  document.getElementById('i-rd').textContent = `${rd[0].toFixed(0)}, ${rd[1].toFixed(0)}`;
+  info.hidden = false;
+}
+
+const toRD = v => [ORIGIN_RD[0] + v.x, ORIGIN_RD[1] - v.z, ORIGIN_RD[2] + v.y];
+
+// ---- loading -------------------------------------------------------------
+const total = TILES.reduce((s, t) => s + t.bytes, 0);
+const got = TILES.map(() => 0);
+const bar = document.getElementById('bar'), loadText = document.getElementById('load-text');
+function progress() {
+  const sum = got.reduce((a, b) => a + b, 0);
+  bar.style.width = `${Math.min(100, (sum / total) * 100).toFixed(1)}%`;
+  loadText.textContent = `${(sum / 1e6).toFixed(1)} of ${(total / 1e6).toFixed(0)} MB`;
+}
+async function fetchTile(i) {
+  const res = await fetch(TILES[i].url);
+  if (!res.ok) throw new Error(`${TILES[i].url}: ${res.status}`);
+  const reader = res.body.getReader();
+  const chunks = [];
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value); got[i] += value.length; progress();
+  }
+  const b64 = await new Blob(chunks).text();
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let k = 0; k < bin.length; k++) out[k] = bin.charCodeAt(k);
+  return out.buffer;
+}
+
+const loader = new GLTFLoader();
+async function loadAll() {
+  const buffers = await Promise.all(TILES.map((_, i) => fetchTile(i)));
+  loadText.textContent = 'Building the city…';
+  for (const buf of buffers) {
+    const gltf = await loader.parseAsync(buf, '');
+    gltf.scene.traverse(o => {
+      if (!o.isMesh) return;
+      o.castShadow = o.receiveShadow = true;
+      const m = o.material;
+      if (m.map) m.map.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      if (m.name === 'water') { m.roughness = 0.08; m.envMapIntensity = 1.3; }
+    });
+    for (const node of [...gltf.scene.children]) {
+      if (node.name === 'ground') {
+        node.traverse(o => { if (o.isMesh) o.castShadow = false; });
+        continue;
+      }
+      const meshes = [];
+      node.traverse(o => { if (o.isMesh) meshes.push(o); });
+      const names = meshes.map(o => o.material.name);
+      node.userData.gabled = names.some(n => n.startsWith('roof_tiles') || n === 'roof_slate');
+      for (const m of meshes) { m.userData.building = node; buildings.push(m); }
+    }
+    scene.add(gltf.scene);
+  }
+}
+
+setTime(15);
+document.getElementById('time').addEventListener('input', e => setTime(parseFloat(e.target.value)));
+camera.position.set(...VIEWS.overview.eye);
+controls.target.set(...VIEWS.overview.target);
+controls.update();
+
+const coords = document.getElementById('coords');
+let frame = 0;
+renderer.setAnimationLoop(() => {
+  if (tween) {
+    // Time-based, so slow devices arrive on time rather than in slow motion.
+    const t = Math.min(1, (performance.now() - tween.start) / 1400);
+    const k = t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2;
+    camera.position.lerpVectors(tween.e0, tween.e1, k);
+    controls.target.lerpVectors(tween.t0, tween.t1, k);
+    if (t >= 1) tween = null;
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  if (++frame % 10 === 0) {
+    const rd = toRD(camera.position);
+    coords.textContent = `Camera RD ${rd[0].toFixed(0)}, ${rd[1].toFixed(0)} · ${camera.position.y.toFixed(0)} m up`;
+  }
+});
+
+loadAll().then(() => {
+  const el = document.getElementById('loading');
+  el.style.opacity = '0';
+  setTimeout(() => el.remove(), reduceMotion ? 0 : 500);
+  window.__ready = true;
+}).catch(err => {
+  loadText.textContent = `The model did not load (${err.message}). Reload the page to try again.`;
+  window.__ready = 'error';
+});
+</script>

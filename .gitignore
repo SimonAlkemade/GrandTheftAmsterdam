@@ -1,3 +1,6 @@
 __pycache__/
 data/*/
 out/*.glb
+out/web/*.glb
+out/web/*.txt
+out/shots_web/

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-SIZE = 512
+SIZE = 512             # texture edge in pixels; build_overture --lite uses 256
 
 
 def png_bytes(img: np.ndarray) -> bytes:
@@ -144,6 +144,38 @@ def wood(seed, base):
     return _rgb(base, streak * (0.9 + 0.1 * n)), None
 
 
+def window_decal(frame=(236, 236, 230), cols=2, rows=3):
+    """One whole sash window painted flat: shadowed reveal, frame, glazing
+    bars and glass with a sky reflection. UV 0..1 spans the opening (v up).
+    The web build uses it instead of real window geometry."""
+    s = SIZE
+    v, u = np.mgrid[0:s, 0:s] / s
+    rgba = np.zeros((s, s, 3))
+    # Glass: dark, a little lighter toward the top where it catches sky.
+    glass = np.array([22, 32, 40]) + np.array([40, 52, 60]) * v[..., None] ** 2
+    rgba[:] = glass
+    # Reveal shadow just inside the opening, deepest at the top and left.
+    edge = np.minimum.reduce([u, 1 - u, v, 1 - v])
+    shade = np.clip(edge / 0.06, 0, 1)
+    top = np.clip((1 - v) / 0.1, 0, 1)
+    rgba *= (0.55 + 0.45 * shade * top)[..., None]
+    f = np.asarray(frame, float)
+    t = 0.07
+    frame_mask = (u < t) | (u > 1 - t) | (v < t) | (v > 1 - t)
+    mid = np.abs(v - 0.5) < 0.025                                   # meeting rail
+    bars = np.zeros_like(u, bool)
+    for i in range(1, cols):
+        bars |= np.abs(u - i / cols) < 0.012
+    for half in (0.0, 0.5):
+        for j in range(1, rows):
+            bars |= (np.abs(v - (half + 0.5 * j / rows)) < 0.01) & (u > t) & (u < 1 - t)
+    paint = frame_mask | mid | bars
+    rgba[paint] = f * (0.92 + 0.08 * u[paint, None])
+    sill = v < 0.035
+    rgba[sill] = np.array([200, 190, 168]) * 0.9
+    return np.clip(rgba, 0, 255).astype(np.uint8), None
+
+
 @dataclass
 class Material:
     name: str
@@ -195,6 +227,9 @@ MATERIALS = {m.name: m for m in [
     Material("roof_slate", 2.0, texture=lambda: tiles(32, (58, 64, 74), rows=16, per_row=8)),
     Material("roof_flat", 4.0, texture=lambda: plain(33, (60, 60, 62), 0.3, 6)),
     Material("ground_cobble", 2.0, texture=lambda: cobbles(34)),
+    Material("window_white", 1.0, roughness=0.3, texture=lambda: window_decal()),
+    Material("window_dark", 1.0, roughness=0.3,
+             texture=lambda: window_decal((30, 32, 32), cols=3, rows=1)),
     Material("water", 8.0, (0.75, 0.85, 0.85, 1), 0.06, 0.0,
              texture=lambda: plain(35, (34, 52, 50), 0.25, 6)),
 ]}

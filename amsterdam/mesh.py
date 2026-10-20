@@ -140,10 +140,11 @@ class Frame:
 class LocalBuilder:
     """Builds geometry in a facade Frame, with metric UVs per material scale."""
 
-    def __init__(self, mesh: MeshBuilder, frame: Frame, uv_scale):
+    def __init__(self, mesh: MeshBuilder, frame: Frame, uv_scale, lite=False):
         self.mesh = mesh
         self.f = frame
         self.uv_scale = uv_scale  # callable: material -> metres per texture tile
+        self.lite = lite          # web weight: thin trims lose their side faces
 
     def poly(self, mat: str, poly: Polygon, d: float, facing: int = 1) -> None:
         """A shapely polygon (u, v) lying in the plane at depth d."""
@@ -156,8 +157,9 @@ class LocalBuilder:
             pos = self.f.world(pts2[:, 0], pts2[:, 1], np.full(len(pts2), d))
             self.mesh.add_triangles(mat, pos, pts2 / s, tris, self.f.n * facing)
 
-    def quad(self, mat: str, corners, normal_local) -> None:
-        """Four local (u, v, d) corners in order; UVs from the face's own axes."""
+    def quad(self, mat: str, corners, normal_local, uv=None) -> None:
+        """Four local (u, v, d) corners in order; UVs from the face's own axes
+        unless given."""
         c = np.asarray(corners, float)
         pos = self.f.world(c[:, 0], c[:, 1], c[:, 2])
         e1 = pos[1] - pos[0]
@@ -165,10 +167,13 @@ class LocalBuilder:
         l1, l2 = np.linalg.norm(e1), np.linalg.norm(e2)
         if l1 < 1e-6 or l2 < 1e-6:
             return
-        s = self.uv_scale(mat)
-        uv = np.array([[0, 0], [l1, 0], [l1, l2], [0, l2]]) / s
-        # Anchor UVs in facade space so neighbouring quads line up.
-        uv += np.array([c[0, 0] + c[0, 2], c[0, 1]]) / s
+        if uv is None:
+            s = self.uv_scale(mat)
+            uv = np.array([[0, 0], [l1, 0], [l1, l2], [0, l2]]) / s
+            # Anchor UVs in facade space so neighbouring quads line up.
+            uv += np.array([c[0, 0] + c[0, 2], c[0, 1]]) / s
+        else:
+            uv = np.asarray(uv, float)
         n = self.f.vec(*normal_local)
         self.mesh.add_triangles(mat, pos, uv, np.array([[0, 1, 2], [0, 2, 3]]), n)
 
@@ -178,6 +183,8 @@ class LocalBuilder:
         usually against the wall and omitted."""
         if u1 - u0 < 1e-4 or v1 - v0 < 1e-4 or d1 - d0 < 1e-4:
             return
+        if self.lite and d1 - d0 < 0.12:
+            faces = "".join(c for c in faces if c in "ft")
         q = self.quad
         if "f" in faces:
             q(mat, [(u0, v0, d1), (u1, v0, d1), (u1, v1, d1), (u0, v1, d1)], (0, 0, 1))
