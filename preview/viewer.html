@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>District Viewer</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #9fb4c8; overflow: hidden; font: 13px system-ui, sans-serif; }
+  #hud { position: fixed; left: 12px; bottom: 12px; color: #fff; background: rgba(0,0,0,.45);
+         padding: 6px 10px; border-radius: 6px; pointer-events: none; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "./three/three.module.js", "three/addons/": "./three/jsm/" } }
+</script>
+</head>
+<body>
+<div id="hud">Loading…</div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { Sky } from 'three/addons/objects/Sky.js';
+
+// ?glb=path  &view=aerial|street|gable  (serve this folder's parent over http)
+const q = new URLSearchParams(location.search);
+const glbPath = q.get('glb') || '../out/sample_canal.glb';
+const hud = document.getElementById('hud');
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.6;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0xb8c6d4, 120, 420);
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 3000);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+const sun = new THREE.Vector3().setFromSphericalCoords(1, THREE.MathUtils.degToRad(52), THREE.MathUtils.degToRad(200));
+const sky = new Sky();
+sky.scale.setScalar(5000);
+sky.material.uniforms.turbidity.value = 6;
+sky.material.uniforms.rayleigh.value = 1.6;
+sky.material.uniforms.sunPosition.value.copy(sun);
+scene.add(sky);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(sky).texture;
+
+scene.add(new THREE.HemisphereLight(0xcfdcec, 0x5a5048, 0.6));
+const light = new THREE.DirectionalLight(0xfff1dc, 3.2);
+light.position.copy(sun).multiplyScalar(300);
+light.castShadow = true;
+light.shadow.mapSize.set(4096, 4096);
+Object.assign(light.shadow.camera, { left: -160, right: 160, top: 160, bottom: -160, near: 1, far: 800 });
+light.shadow.bias = -0.0004;
+light.shadow.normalBias = 0.03;
+scene.add(light);
+
+new GLTFLoader().load(glbPath, gltf => {
+  const root = gltf.scene;
+  let tris = 0;
+  root.traverse(o => {
+    if (!o.isMesh) return;
+    o.castShadow = o.receiveShadow = true;
+    tris += o.geometry.index ? o.geometry.index.count / 3 : o.geometry.attributes.position.count / 3;
+    const m = o.material;
+    if (m.map) { m.map.anisotropy = 8; m.map.colorSpace = THREE.SRGBColorSpace; }
+    if (m.normalMap) m.normalScale.set(0.7, 0.7);
+  });
+  scene.add(root);
+  const box = new THREE.Box3().setFromObject(root);
+  const c = box.getCenter(new THREE.Vector3());
+  const views = {
+    aerial: [[c.x + 70, 85, c.z + 120], [c.x, 4, c.z]],
+    street: [[c.x - 30, 1.7, c.z + 4], [c.x + 10, 8, c.z - 12]],
+    gable:  [[c.x + 6, 6, c.z + 2], [c.x + 6, 12, c.z - 16]],
+  };
+  const [eye, target] = views[q.get('view') || 'aerial'] || views.aerial;
+  camera.position.set(...eye);
+  controls.target.set(...target);
+  controls.update();
+  hud.textContent = `${glbPath} · ${root.children.length} nodes · ${Math.round(tris).toLocaleString()} tris · drag to orbit`;
+  let frames = 0;
+  renderer.setAnimationLoop(() => {
+    controls.update();
+    renderer.render(scene, camera);
+    if (++frames === 5) window.__ready = true;
+  });
+}, undefined, err => { hud.textContent = 'Failed to load ' + glbPath + ': ' + err; window.__ready = 'error'; });
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
