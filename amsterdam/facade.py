@@ -390,19 +390,24 @@ class FacadeBuilder:
             q(mat, [(u0, v0, -depth), (u0, v0, 0), (u1, v0, 0), (u1, v0, -depth)], (0, 1, 0))
 
     def _frame_ring(self, u0, u1, v0, v1, d, t, depth, mat):
+        # Only the faces you can see: the front and the side toward the glass.
         b = self.lb.box
-        b(mat, u0, u0 + t, v0, v1, d, d + depth)
-        b(mat, u1 - t, u1, v0, v1, d, d + depth)
-        b(mat, u0 + t, u1 - t, v1 - t, v1, d, d + depth)
-        b(mat, u0 + t, u1 - t, v0, v0 + t, d, d + depth)
+        b(mat, u0, u0 + t, v0, v1, d, d + depth, faces="fr")
+        b(mat, u1 - t, u1, v0, v1, d, d + depth, faces="fl")
+        b(mat, u0 + t, u1 - t, v1 - t, v1, d, d + depth, faces="fb")
+        b(mat, u0 + t, u1 - t, v0, v0 + t, d, d + depth, faces="ft")
 
     def _bars(self, u0, u1, v0, v1, d, cols, rows, mat, t=0.03):
+        # Glazing bars are flat strips just proud of the glass: at street
+        # distance their depth is invisible and boxes cost five times more.
+        q = self.lb.quad
+        z = d + 0.02
         for i in range(1, cols):
             x = u0 + (u1 - u0) * i / cols
-            self.lb.box(mat, x - t / 2, x + t / 2, v0, v1, d, d + 0.035)
+            q(mat, [(x - t / 2, v0, z), (x + t / 2, v0, z), (x + t / 2, v1, z), (x - t / 2, v1, z)], (0, 0, 1))
         for j in range(1, rows):
             y = v0 + (v1 - v0) * j / rows
-            self.lb.box(mat, u0, u1, y - t / 2, y + t / 2, d, d + 0.035)
+            q(mat, [(u0, y - t / 2, z), (u1, y - t / 2, z), (u1, y + t / 2, z), (u0, y + t / 2, z)], (0, 0, 1))
 
     def _window(self, u0, u1, v0, v1, upper):
         st, lb, rng = self.st, self.lb, self.rng
@@ -414,14 +419,14 @@ class FacadeBuilder:
         cols, rows = st.bars
         if st.sash:
             mid = iv0 + (iv1 - iv0) * 0.5
-            lb.box(st.frame, iu0, iu1, mid - 0.03, mid + 0.03, -R, -R + 0.06)
+            lb.box(st.frame, iu0, iu1, mid - 0.03, mid + 0.03, -R, -R + 0.06, faces="ftb")
             self._bars(iu0, iu1, mid, iv1, -R, cols, rows, st.frame)
             self._bars(iu0, iu1, iv0, mid, -R, cols, rows, st.frame)
         else:
             self._bars(iu0, iu1, iv0, iv1, -R, cols, max(rows, 1), st.frame)
         lb.box(st.trim, u0 - 0.06, u1 + 0.06, v0 - 0.08, v0 + 0.01, -R, 0.07)
         if st.lintels:
-            lb.box(st.trim, u0 - 0.1, u1 + 0.1, v1, v1 + 0.22, 0.0, 0.025)
+            lb.box(st.trim, u0 - 0.1, u1 + 0.1, v1, v1 + 0.22, 0.0, 0.025, faces="ftlr")
         if upper and st.shutter and rng.random() < 0.8:
             w = (u1 - u0) / 2
             for a, b in ((u0 - w - 0.03, u0 - 0.03), (u1 + 0.03, u1 + 0.03 + w)):

@@ -195,6 +195,8 @@ MATERIALS = {m.name: m for m in [
     Material("roof_slate", 2.0, texture=lambda: tiles(32, (58, 64, 74), rows=16, per_row=8)),
     Material("roof_flat", 4.0, texture=lambda: plain(33, (60, 60, 62), 0.3, 6)),
     Material("ground_cobble", 2.0, texture=lambda: cobbles(34)),
+    Material("water", 8.0, (0.75, 0.85, 0.85, 1), 0.06, 0.0,
+             texture=lambda: plain(35, (34, 52, 50), 0.25, 6)),
 ]}
 
 

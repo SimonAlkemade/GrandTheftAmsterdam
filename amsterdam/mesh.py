@@ -172,16 +172,22 @@ class LocalBuilder:
         n = self.f.vec(*normal_local)
         self.mesh.add_triangles(mat, pos, uv, np.array([[0, 1, 2], [0, 2, 3]]), n)
 
-    def box(self, mat: str, u0, u1, v0, v1, d0, d1, back=False) -> None:
-        """Axis-aligned box in facade space. The back (d0) face is usually
-        against the wall and omitted."""
+    def box(self, mat: str, u0, u1, v0, v1, d0, d1, back=False, faces="flrtb") -> None:
+        """Axis-aligned box in facade space. faces picks which sides to emit:
+        f(ront), l(eft), r(ight), t(op), b(ottom). The back (d0) face is
+        usually against the wall and omitted."""
         if u1 - u0 < 1e-4 or v1 - v0 < 1e-4 or d1 - d0 < 1e-4:
             return
         q = self.quad
-        q(mat, [(u0, v0, d1), (u1, v0, d1), (u1, v1, d1), (u0, v1, d1)], (0, 0, 1))
-        q(mat, [(u0, v0, d0), (u0, v0, d1), (u0, v1, d1), (u0, v1, d0)], (-1, 0, 0))
-        q(mat, [(u1, v0, d1), (u1, v0, d0), (u1, v1, d0), (u1, v1, d1)], (1, 0, 0))
-        q(mat, [(u0, v1, d1), (u1, v1, d1), (u1, v1, d0), (u0, v1, d0)], (0, 1, 0))
-        q(mat, [(u0, v0, d0), (u1, v0, d0), (u1, v0, d1), (u0, v0, d1)], (0, -1, 0))
+        if "f" in faces:
+            q(mat, [(u0, v0, d1), (u1, v0, d1), (u1, v1, d1), (u0, v1, d1)], (0, 0, 1))
+        if "l" in faces:
+            q(mat, [(u0, v0, d0), (u0, v0, d1), (u0, v1, d1), (u0, v1, d0)], (-1, 0, 0))
+        if "r" in faces:
+            q(mat, [(u1, v0, d1), (u1, v0, d0), (u1, v1, d0), (u1, v1, d1)], (1, 0, 0))
+        if "t" in faces:
+            q(mat, [(u0, v1, d1), (u1, v1, d1), (u1, v1, d0), (u0, v1, d0)], (0, 1, 0))
+        if "b" in faces:
+            q(mat, [(u0, v0, d0), (u1, v0, d0), (u1, v0, d1), (u0, v0, d1)], (0, -1, 0))
         if back:
             q(mat, [(u1, v0, d0), (u0, v0, d0), (u0, v1, d0), (u1, v1, d0)], (0, 0, -1))

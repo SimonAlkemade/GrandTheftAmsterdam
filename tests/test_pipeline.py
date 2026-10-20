@@ -175,3 +175,39 @@ class Coordinates(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OvertureRows(unittest.TestCase):
+    def _row(self, w_m, d_m, **kw):
+        from shapely.geometry import box as sbox
+        # A w x d metre lot near the Dam, in lon/lat.
+        lon, lat = 4.8926, 52.3731
+        dlon, dlat = w_m / 68000.0, d_m / 111200.0
+        g = sbox(lon, lat, lon + dlon, lat + dlat)
+        return dict({"id": "t", "geometry": g.wkb, "height": 14.0, "num_floors": None,
+                     "roof_shape": None, "roof_height": None, "class": None,
+                     "is_underground": False}, **kw)
+
+    def test_narrow_deep_lot_gets_a_canal_house_gable(self):
+        from amsterdam.overture import building_from_row
+        b = building_from_row(self._row(6, 18))
+        pentagons = [s for s in b.walls() if len(s.ring) == 5]
+        self.assertEqual(len(pentagons), 2)            # front and back gable ends
+        self.assertEqual(len(b.roofs()), 2)
+        top = max(s.ring[:, 2].max() for s in b.surfaces)
+        self.assertAlmostEqual(top - b.ground_z, 14.0, delta=0.05)  # height kept
+        self.assertGreater(signed_volume(b.surfaces), 0)
+
+    def test_wide_or_tagged_flat_buildings_stay_flat(self):
+        from amsterdam.overture import building_from_row
+        for row in (self._row(30, 25), self._row(6, 18, roof_shape="flat")):
+            b = building_from_row(row)
+            self.assertEqual(len(b.roofs()), 1)
+            self.assertTrue(all(len(s.ring) == 4 for s in b.walls()))
+            self.assertGreater(signed_volume(b.surfaces), 0)
+
+    def test_houseboats_float_below_the_street(self):
+        from amsterdam.overture import GROUND_Z, building_from_row
+        b = building_from_row(self._row(4, 20, **{"class": "houseboat"}))
+        self.assertLess(b.ground_z, GROUND_Z - 1.0)
+        self.assertLess(b.min_z(), GROUND_Z)

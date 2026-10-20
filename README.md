@@ -33,7 +33,38 @@ Unity, Blender and three.js.
 > street in the exact 3D BAG format. The pipeline was built in a sandbox that
 > could not reach 3dbag.nl. Run the real data as shown below.
 
-## Use
+## Real Amsterdam via Overture Maps
+
+![canal](out/godot/ams_canal2.png)
+
+Overture Maps publishes OpenStreetMap-based buildings (with measured heights for
+most of Amsterdam) and water on a public bucket that needs no account. This
+path builds the canal ring from that data:
+
+```bash
+python fetch_overture.py --center 52.3725 4.8865 --size 600 -o data/grachtengordel
+python build_overture.py data/grachtengordel/buildings.pkl data/grachtengordel/water.pkl \
+    --center 52.3725 4.8865 --size 450 400 -o out/amsterdam.glb
+```
+
+The fetcher reads only parquet footers and the matching row groups, a few MB
+for a neighbourhood. It produces:
+
+- footprints and heights from the data
+- canals cut out of the cobbled ground, with brick quay walls
+- houseboats moored at water level
+
+Roofs are heuristic: Overture has no LoD2 roofs and little roof tagging, so a
+narrow, deep, rectangular lot gets a canal-house gable roof and everything
+else is flat. There is no construction year either, so styles are drawn at
+random. 3D BAG (below) is more accurate on both counts.
+
+The 450 x 400 m slice is 469 buildings and 1.9 M triangles: comfortable for a
+desktop GPU, too much for a phone.
+
+Credit: © OpenStreetMap contributors, Overture Maps Foundation (ODbL).
+
+## Use (3D BAG)
 
 ```bash
 pip install -r requirements.txt

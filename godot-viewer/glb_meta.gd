@@ -1,4 +1,4 @@
-class_name GlbMeta
+extends RefCounted
 ## Reads the glTF JSON chunk of a .glb directly. Godot's importer does not
 ## keep glTF "extras", and those carry what the viewer reports: each
 ## building's construction year and the scene's RD New origin.
@@ -8,28 +8,28 @@ var origin_rd := Vector3.ZERO  # RD New (x east, y north, z up) at scene (0, 0, 
 var ok := false
 
 
-static func read(path: String) -> GlbMeta:
-	var meta := GlbMeta.new()
+## Fills this object from the .glb at path; ok says whether it worked.
+func read(path: String) -> bool:
 	var f := FileAccess.open(path, FileAccess.READ)
 	if f == null or f.get_32() != 0x46546C67:
-		return meta
+		return false
 	f.get_32()  # version
 	f.get_32()  # total length
 	var json_len := f.get_32()
 	if f.get_32() != 0x4E4F534A:
-		return meta
+		return false
 	var doc = JSON.parse_string(f.get_buffer(json_len).get_string_from_utf8())
 	if typeof(doc) != TYPE_DICTIONARY:
-		return meta
-	meta.nodes = doc.get("nodes", [])
+		return false
+	nodes = doc.get("nodes", [])
 	var scenes: Array = doc.get("scenes", [])
 	if not scenes.is_empty():
 		var extras: Dictionary = scenes[0].get("extras", {})
 		var o: Array = extras.get("origin_rd", [0, 0, 0])
 		if o.size() == 3:
-			meta.origin_rd = Vector3(float(o[0]), float(o[1]), float(o[2]))
-	meta.ok = true
-	return meta
+			origin_rd = Vector3(float(o[0]), float(o[1]), float(o[2]))
+	ok = true
+	return true
 
 
 func extras(index: int) -> Dictionary:

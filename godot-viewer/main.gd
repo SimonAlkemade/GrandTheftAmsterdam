@@ -8,8 +8,12 @@ extends Node3D
 ##
 ## Headless screenshots for CI / docs:
 ##   godot --path godot-viewer -- --glb=../out/x.glb --shot=out.png --view=street [--era] [--select=N]
+##   (--eye=x,y,z --target=x,y,z places the camera exactly, in scene metres)
 
+# Preloaded rather than class_name'd, so a fresh checkout runs without the
+# editor having built its global class cache first.
 const FlyCamera := preload("res://fly_camera.gd")
+const GlbMeta := preload("res://glb_meta.gd")
 
 const ERAS := [
 	{"name": "Golden Age (< 1720)", "max": 1720, "color": Color(0.95, 0.65, 0.15)},
@@ -60,7 +64,7 @@ func _ready() -> void:
 	else:
 		_set_status("Open a .glb from build_city.py (button, or drag it onto the window).")
 	if _args.has("shot"):
-		_shot_frames = 30
+		_shot_frames = 3
 
 
 # --------------------------------------------------------------------------
@@ -87,7 +91,7 @@ func _build_world() -> void:
 	env.ssao_intensity = 1.6
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.72, 0.78, 0.85)
-	env.fog_density = 0.0015
+	env.fog_density = 0.0006
 	env.fog_aerial_perspective = 0.4
 	env.glow_enabled = true
 	env.glow_intensity = 0.3
@@ -136,10 +140,14 @@ func load_district(path: String) -> void:
 	if err != OK:
 		_set_status("Could not read %s (error %d)" % [path.get_file(), err])
 		return
+	print("parsed glb: %d ms" % (Time.get_ticks_msec() - t0))
 	district = doc.generate_scene(state) as Node3D
+	print("scene generated: %d ms" % (Time.get_ticks_msec() - t0))
 	add_child(district)
 	_add_mipmaps(district)
-	meta = GlbMeta.read(path)
+	print("mipmaps: %d ms" % (Time.get_ticks_msec() - t0))
+	meta = GlbMeta.new()
+	meta.read(path)
 	var total_tris := 0
 	bounds = AABB()
 	var first := true
@@ -370,8 +378,12 @@ func _process(_delta: float) -> void:
 
 func _take_requested_shot() -> void:
 	view(_args.get("view", "aerial"), false)
+	if _args.has("eye") and _args.has("target"):
+		cam.look_from(_vec(_args.eye), _vec(_args.target))
 	if _args.has("era"):
 		ui.era.button_pressed = true
+	if _args.has("nopanel"):
+		ui.panel.visible = false
 	await get_tree().process_frame
 	await get_tree().process_frame
 	await RenderingServer.frame_post_draw
@@ -528,6 +540,11 @@ func _thousands(n: int) -> String:
 		out = "," + s.substr(s.length() - 3) + out
 		s = s.substr(0, s.length() - 3)
 	return s + out
+
+
+func _vec(csv: String) -> Vector3:
+	var p := csv.split(",")
+	return Vector3(float(p[0]), float(p[1]), float(p[2]))
 
 
 func _parse_args() -> Dictionary:
