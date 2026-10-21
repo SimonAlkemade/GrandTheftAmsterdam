@@ -4,3 +4,6 @@ out/*.glb
 out/web/*.glb
 out/web/*.txt
 out/shots_web/
+out/centrum/city.json
+out/shots_centrum/
+data/centrum/
