@@ -1,0 +1,323 @@
+extends Node3D
+## Cars, buses and trams on the real street and tram network.
+##
+## Every loaded tile adds its road and tram polylines as edges of one graph;
+## edges meet where their ends coincide (tiles were cut along the same lines,
+## so the network continues across tile borders). Vehicles drive along an
+## edge, pick a next edge at its end (mostly the straightest), keep to the
+## right, slow for curves, keep their distance from whatever is ahead of
+## them -- including the walking player -- and buses and trams stop now and
+## then. Vehicles spawn within `spawn_radius` of `focus` and are dropped
+## beyond it.
+
+const Models := preload("res://scripts/vehicle_models.gd")
+const SNAP := 2.0                 # half-metre grid for joining edge ends
+const KINDS := {
+	"car": {"len": 4.2, "max": 12.5, "lane": 1.6, "y": 0.09, "accel": 3.0},
+	"bus": {"len": 12.0, "max": 11.0, "lane": 1.9, "y": 0.09, "accel": 1.5},
+	"tram": {"len": 29.8, "max": 11.5, "lane": 0.0, "y": 0.13, "accel": 1.1},
+}
+const TRAM_SECTIONS := [9.6, 9.6, 9.6]
+const CAR_COLORS := ["1b1b1b", "f2f2f2", "8a8f94", "2c4a6e", "7a1e1e", "2f5d3a", "c9b48a", "d9d4c7", "0f2a4a", "b3261e", "4a4f55", "e8e8e8"]
+
+var target := {"car": 70, "bus": 7, "tram": 9}
+var spawn_radius := 420.0
+var focus := Vector3.ZERO
+var player := Vector3(1e9, 0, 1e9)  # the walker, as an obstacle
+var enabled := true
+
+var edges := {}        # id -> edge
+var nodes := {}        # Vector2i -> Array[[edge id, end]]
+var by_kind := {"road": [], "tram": []}
+var vehicles: Array = []
+var _next_id := 0
+var _rng := RandomNumberGenerator.new()
+
+
+# ---- the network ------------------------------------------------------------------
+
+func _key(p: Vector2) -> Vector2i:
+	return Vector2i(roundi(p.x * SNAP), roundi(p.y * SNAP))
+
+
+func add_tile(key: String, lanes: Array) -> void:
+	for l in lanes:
+		var p: PackedVector2Array = l.p
+		if p.size() < 2:
+			continue
+		var cum := PackedFloat32Array([0.0])
+		for i in range(1, p.size()):
+			cum.append(cum[i - 1] + p[i - 1].distance_to(p[i]))
+		if cum[cum.size() - 1] < 3.0:
+			continue
+		var id := _next_id; _next_id += 1
+		var e := {"id": id, "kind": l.kind, "w": l.w, "p": p, "cum": cum, "len": cum[cum.size() - 1], "tile": key,
+			"ends": [_key(p[0]), _key(p[p.size() - 1])]}
+		edges[id] = e
+		for end in 2:
+			var k: Vector2i = e.ends[end]
+			if not nodes.has(k): nodes[k] = []
+			nodes[k].append([id, end])
+		by_kind[l.kind].append(id)
+
+
+func remove_tile(key: String) -> void:
+	var gone := {}
+	for id in edges.keys():
+		if edges[id].tile == key:
+			gone[id] = true
+	for id in gone:
+		var e: Dictionary = edges[id]
+		for k in e.ends:
+			if nodes.has(k):
+				nodes[k] = nodes[k].filter(func(x): return not gone.has(x[0]))
+				if nodes[k].is_empty(): nodes.erase(k)
+		by_kind[e.kind].erase(id)
+		edges.erase(id)
+	for v in vehicles.duplicate():
+		if gone.has(v.edge):
+			_despawn(v)
+
+
+# Point and direction at distance d from the start of an edge.
+func _at(e: Dictionary, d: float) -> Array:
+	var p: PackedVector2Array = e.p
+	var cum: PackedFloat32Array = e.cum
+	d = clampf(d, 0.0, e.len)
+	var i := cum.bsearch(d) - 1
+	i = clampi(i, 0, p.size() - 2)
+	var seg := maxf(cum[i + 1] - cum[i], 1e-4)
+	var t := (d - cum[i]) / seg
+	return [p[i].lerp(p[i + 1], t), (p[i + 1] - p[i]) / seg]
+
+
+# Position and heading of a vehicle's front, on its lane.
+func _front(v: Dictionary) -> Array:
+	var e: Dictionary = edges[v.edge]
+	var r := _at(e, v.s if v.dir == 1 else e.len - v.s)
+	var fwd: Vector2 = r[1] * v.dir
+	var right := Vector2(-fwd.y, fwd.x)
+	return [r[0] + right * KINDS[v.kind].lane, fwd]
+
+
+func _usable(kind: String, e: Dictionary) -> bool:
+	if kind == "tram": return e.kind == "tram"
+	if e.kind != "road": return false
+	return kind != "bus" or e.w >= 7.0
+
+
+# ---- vehicles --------------------------------------------------------------------
+
+func _spawn(kind: String) -> void:
+	var pool: Array = by_kind["tram" if kind == "tram" else "road"]
+	if pool.is_empty():
+		return
+	var spec: Dictionary = KINDS[kind]
+	for attempt in 30:
+		var e: Dictionary = edges[pool[_rng.randi() % pool.size()]]
+		if not _usable(kind, e) or e.len < spec.len + 6.0:
+			continue
+		var mid: Vector2 = _at(e, e.len / 2)[0]
+		var dist := mid.distance_to(Vector2(focus.x, focus.z))
+		if dist > spawn_radius or dist < 60.0:
+			continue
+		var v := {"kind": kind, "edge": e.id, "dir": 1 if _rng.randf() < 0.5 else -1,
+			"s": _rng.randf_range(spec.len + 1.0, e.len - 1.0), "speed": spec.max * 0.6, "stuck": 0.0, "ghost": 0.0,
+			"stop_in": _rng.randf_range(150, 400), "dwell": 0.0, "trail": []}
+		var f := _front(v)
+		var clear := true
+		for o in vehicles:
+			if o.pos.distance_to(f[0]) < spec.len + 8.0:
+				clear = false; break
+		if not clear:
+			continue
+		v.pos = f[0]
+		# Seed the trail straight back along the edge, so bodies start on the road.
+		var back := 0.0
+		while back <= spec.len + 2.0:
+			var vv := v.duplicate(); vv.s = v.s - back
+			v.trail.append(_front(vv)[0])
+			back += 0.5
+		v.trail.reverse()
+		_build_model(v)
+		vehicles.append(v)
+		return
+
+
+func _build_model(v: Dictionary) -> void:
+	var root := Node3D.new()
+	v.parts = []
+	match v.kind:
+		"car":
+			var c: Node3D = Models.car(Color(CAR_COLORS[_rng.randi() % CAR_COLORS.size()]))
+			root.add_child(c); v.parts.append([c, 0.0, 4.2])
+		"bus":
+			var b: Node3D = Models.bus()
+			root.add_child(b); v.parts.append([b, 0.0, 12.0])
+		"tram":
+			var off := 0.0
+			for k in TRAM_SECTIONS.size():
+				var cab := -1 if k == 0 else (1 if k == TRAM_SECTIONS.size() - 1 else 0)
+				var sec: Node3D = Models.tram_section(TRAM_SECTIONS[k], cab)
+				root.add_child(sec)
+				v.parts.append([sec, off, TRAM_SECTIONS[k]])
+				off += TRAM_SECTIONS[k] + 0.5
+				if k < TRAM_SECTIONS.size() - 1:
+					var j := Models.tram_joint()
+					root.add_child(j)
+					v.parts.append([j, off - 0.5, 0.5])
+	add_child(root)
+	v.node = root
+
+
+func _despawn(v: Dictionary) -> void:
+	if is_instance_valid(v.node):
+		v.node.queue_free()
+	vehicles.erase(v)
+
+
+# Choose where to go at the end of an edge: mostly the straightest way on.
+func _next(v: Dictionary) -> bool:
+	var e: Dictionary = edges[v.edge]
+	var at_end := 1 if v.dir == 1 else 0
+	var k: Vector2i = e.ends[at_end]
+	var heading: Vector2 = _front(v)[1]
+	var options := []
+	for x in nodes.get(k, []):
+		if x[0] == v.edge: continue
+		var ne: Dictionary = edges[x[0]]
+		if not _usable(v.kind, ne): continue
+		var ndir := 1 if x[1] == 0 else -1
+		var start := _at(ne, 0.0 if ndir == 1 else ne.len)
+		var turn: float = heading.dot(start[1] * ndir)
+		options.append([x[0], ndir, turn])
+	if options.is_empty():
+		return false
+	var total := 0.0
+	for o in options:
+		o[2] = pow(maxf(o[2] + 1.05, 0.05), 3.0)    # straight on is likely, U-turns rare
+		total += o[2]
+	var pick := _rng.randf() * total
+	for o in options:
+		pick -= o[2]
+		if pick <= 0.0:
+			v.edge = o[0]; v.dir = o[1]
+			return true
+	v.edge = options[0][0]; v.dir = options[0][1]
+	return true
+
+
+func _process(delta: float) -> void:
+	if not enabled:
+		return
+	delta = minf(delta, 0.1)
+	var counts := {"car": 0, "bus": 0, "tram": 0}
+	for v in vehicles.duplicate():
+		if v.pos.distance_to(Vector2(focus.x, focus.z)) > spawn_radius + 160.0:
+			_despawn(v)
+		else:
+			counts[v.kind] += 1
+	for kind in counts:
+		if counts[kind] < target[kind]:
+			_spawn(kind)                  # one per kind per frame: no bursts
+	for v in vehicles.duplicate():
+		_drive(v, delta)
+
+
+func _drive(v: Dictionary, dt: float) -> void:
+	var spec: Dictionary = KINDS[v.kind]
+	var e: Dictionary = edges.get(v.edge, {})
+	if e.is_empty():
+		_despawn(v); return
+	var f := _front(v)
+	var fwd: Vector2 = f[1]
+	# Slow for the bend ahead.
+	var ahead := v.duplicate(); ahead.s = minf(v.s + 14.0, e.len)
+	var bend: float = acos(clampf(fwd.dot(_front(ahead)[1]), -1.0, 1.0))
+	var want: float = spec.max * clampf(1.0 - bend / 1.1, 0.3, 1.0)
+	# Keep a gap to anything in front: other vehicles and the walker.
+	var gap := 1e9
+	if v.ghost <= 0.0:
+		for o in vehicles:
+			if o == v: continue
+			var d: Vector2 = o.pos - v.pos
+			var along := d.dot(fwd)
+			if along <= 0.0 or along > 40.0: continue
+			if absf(d.cross(fwd)) > 2.4: continue
+			gap = minf(gap, along - KINDS[o.kind].len * 0.5 - 2.0)
+	var pp: Vector2 = Vector2(player.x, player.z) - v.pos
+	if pp.dot(fwd) > 0.0 and pp.dot(fwd) < 25.0 and absf(pp.cross(fwd)) < 2.6:
+		gap = minf(gap, pp.dot(fwd) - 3.0)
+	want = minf(want, maxf(0.0, (gap - 1.0) / 1.3))
+	# Buses and trams stop now and then, as if at a stop.
+	if v.kind != "car":
+		v.stop_in -= v.speed * dt
+		if v.stop_in < 30.0 and v.dwell <= 0.0:
+			want = minf(want, maxf(0.0, v.stop_in / 3.0))
+			if v.stop_in <= 0.5 and v.speed < 0.3:
+				v.dwell = _rng.randf_range(6.0, 11.0)
+		if v.dwell > 0.0:
+			want = 0.0
+			v.dwell -= dt
+			if v.dwell <= 0.0:
+				v.stop_in = _rng.randf_range(250, 500)
+	var acc: float = spec.accel if want > v.speed else spec.accel * 2.5
+	v.speed = move_toward(v.speed, want, acc * dt)
+	# Stuck behind something that is stuck behind us: one of us goes first.
+	if v.speed < 0.2 and want < 0.2 and v.dwell <= 0.0:
+		v.stuck += dt
+		if v.stuck > 5.0:
+			v.ghost = 2.5; v.stuck = 0.0
+	else:
+		v.stuck = 0.0
+	v.ghost = maxf(0.0, v.ghost - dt)
+	# Move, crossing to the next edge at the end of this one.
+	v.s += v.speed * dt
+	var guard := 0
+	while v.s > edges[v.edge].len and guard < 4:
+		var over: float = v.s - edges[v.edge].len
+		if not _next(v):
+			v.dir = -v.dir                  # dead end: turn round
+		v.s = over
+		guard += 1
+	f = _front(v)
+	v.pos = f[0]
+	v.yaw = atan2(-f[1].x, -f[1].y)
+	# The trail of the front: bodies and tram sections follow it.
+	var trail: Array = v.trail
+	if trail.is_empty() or trail[trail.size() - 1].distance_to(v.pos) > 0.4:
+		trail.append(v.pos)
+		while trail.size() > int((spec.len + 6.0) / 0.4):
+			trail.pop_front()
+	for part in v.parts:
+		var a := _behind(trail, v.pos, part[1])
+		var b := _behind(trail, v.pos, part[1] + part[2])
+		var mid: Vector2 = (a + b) / 2.0
+		var dir: Vector2 = (a - b).normalized() if a.distance_to(b) > 0.01 else fwd
+		part[0].position = Vector3(mid.x, spec.y, mid.y)
+		part[0].rotation.y = atan2(-dir.x, -dir.y)
+
+
+# The point `back` metres behind the front along the trail.
+func _behind(trail: Array, front: Vector2, back: float) -> Vector2:
+	var p := front
+	var left := back
+	for i in range(trail.size() - 1, -1, -1):
+		var q: Vector2 = trail[i]
+		var d := p.distance_to(q)
+		if d >= left and d > 0.0:
+			return p.lerp(q, left / d)
+		left -= d
+		p = q
+	return p
+
+
+func count() -> Dictionary:
+	var c := {"car": 0, "bus": 0, "tram": 0}
+	for v in vehicles: c[v.kind] += 1
+	return c
+
+
+func clear() -> void:
+	for v in vehicles.duplicate():
+		_despawn(v)

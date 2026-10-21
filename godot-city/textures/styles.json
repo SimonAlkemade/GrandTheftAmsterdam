@@ -1,0 +1,57 @@
+[
+ {
+  "wall": "#8e3b2a",
+  "frame": "#efebe2",
+  "trim": "#d8cfba",
+  "brick": true,
+  "door": "#1f3d2e",
+  "panes": true
+ },
+ {
+  "wall": "#6a3a2a",
+  "frame": "#efebe2",
+  "trim": "#d8cfba",
+  "brick": true,
+  "door": "#1b1c1e",
+  "bands": true
+ },
+ {
+  "wall": "#4b3026",
+  "frame": "#efebe2",
+  "trim": "#cfc6b0",
+  "brick": true,
+  "door": "#6b1f1a",
+  "panes": true
+ },
+ {
+  "wall": "#a5572f",
+  "frame": "#efebe2",
+  "trim": "#e0d8c4",
+  "brick": true,
+  "door": "#1f3d2e",
+  "shutters": "#24452f"
+ },
+ {
+  "wall": "#e6e1d4",
+  "frame": "#2a2d2e",
+  "trim": "#ffffff",
+  "brick": false,
+  "door": "#1b1c1e",
+  "bands": true
+ },
+ {
+  "wall": "#7d8584",
+  "frame": "#efebe2",
+  "trim": "#e9e6df",
+  "brick": false,
+  "door": "#23384f",
+  "panes": true
+ },
+ {
+  "wall": "#c9b48a",
+  "frame": "#efebe2",
+  "trim": "#efe7d2",
+  "brick": true,
+  "door": "#4a2e1f"
+ }
+]
