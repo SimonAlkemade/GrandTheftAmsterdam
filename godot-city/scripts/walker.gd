@@ -1,5 +1,5 @@
 extends CharacterBody3D
-## On foot. WASD to walk (relative to the camera), Shift to run, Space to
+## On foot. WASD or the arrow keys to walk (relative to the camera), Shift to run, Space to
 ## jump, mouse to look (captured), wheel to zoom the camera. Walls stop you;
 ## canals have no floor, so you fall in and swim, and climb out at a quay.
 ## Pedestrians walk the streets around you.
@@ -98,8 +98,10 @@ func _free(p: Vector3) -> bool:
 func _physics_process(delta: float) -> void:
 	if not active:
 		return
-	var ix := float(Input.is_physical_key_pressed(KEY_D)) - float(Input.is_physical_key_pressed(KEY_A))
-	var iz := float(Input.is_physical_key_pressed(KEY_S)) - float(Input.is_physical_key_pressed(KEY_W))
+	var key := func(k: Key, alt: Key) -> float:
+		return 1.0 if Input.is_physical_key_pressed(k) or Input.is_physical_key_pressed(alt) else 0.0
+	var ix: float = key.call(KEY_D, KEY_RIGHT) - key.call(KEY_A, KEY_LEFT)
+	var iz: float = key.call(KEY_S, KEY_DOWN) - key.call(KEY_W, KEY_UP)
 	var inp := Vector2(ix, iz).limit_length(1.0)
 	var run := Input.is_physical_key_pressed(KEY_SHIFT)
 	var swimming := state == "swim"

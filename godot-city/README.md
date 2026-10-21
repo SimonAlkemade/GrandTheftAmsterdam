@@ -13,7 +13,7 @@ macOS, Windows and Linux.
 
 | On foot (the default) | |
 |---|---|
-| WASD | move (relative to camera) |
+| WASD or arrow keys | move (relative to camera) |
 | Shift | run |
 | Space | jump |
 | Mouse (click to capture) / right-drag / two-finger swipe | look |

@@ -244,7 +244,7 @@ func _hud() -> void:
 	mm.visible = false
 	ui.minimap = mm
 	var hint := Label.new()
-	hint.text = "WASD  move     Shift  run     Space  jump\nMouse  look     Wheel  zoom     M  map     Esc  free mouse"
+	hint.text = "WASD / arrows  move     Shift  run     Space  jump\nMouse  look     Wheel  zoom     M  map     Esc  free mouse"
 	hint.add_theme_font_size_override("font_size", 13)
 	hint.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
 	hint.add_theme_constant_override("outline_size", 4)
@@ -268,7 +268,7 @@ func _hud() -> void:
 func _help() -> void:
 	ui.help.text = ("Drag: pan   Right-drag / Q E R F: rotate & tilt\nWheel or pinch: zoom   WASD: move   M: walk here"
 		if mode == "map" else
-		"WASD: walk   Shift: run   Space: jump\nMouse: look   Wheel: camera distance   Esc: mouse   M: map")
+		"WASD / arrows: walk   Shift: run   Space: jump\nMouse: look   Wheel: camera distance   Esc: mouse   M: map")
 
 
 func _set_mode(m: String) -> void:
