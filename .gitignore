@@ -7,3 +7,9 @@ out/shots_web/
 out/centrum/city.json
 out/shots_centrum/
 data/centrum/
+out/city/tiles/
+out/city/*.json
+out/city/overview.jpg
+out/shots_city/
+data/city/
+data_city_fetch.log
