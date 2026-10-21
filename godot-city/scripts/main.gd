@@ -61,6 +61,7 @@ func _ready() -> void:
 	walker = Walker.new()
 	add_child(walker)
 	walker.setup(streamer, cam)
+	walker.traffic = traffic
 
 	_ui()
 	_set_hour(hour)
@@ -244,7 +245,7 @@ func _hud() -> void:
 	mm.visible = false
 	ui.minimap = mm
 	var hint := Label.new()
-	hint.text = "WASD / arrows  move     Shift  run     Space  jump\nMouse  look     Wheel  zoom     M  map     Esc  free mouse"
+	hint.text = "WASD / arrows  move     Shift  run     Space  jump     E  get in or out of a vehicle\nMouse  look     Wheel  zoom     M  map     Esc  free mouse"
 	hint.add_theme_font_size_override("font_size", 13)
 	hint.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
 	hint.add_theme_constant_override("outline_size", 4)
@@ -252,6 +253,17 @@ func _hud() -> void:
 	hint.visible = false
 	layer.add_child(hint)
 	ui.walk_hint = hint
+	# What E does here: "E  drive this car", "E  get out"...
+	var prompt := Label.new()
+	prompt.add_theme_font_size_override("font_size", 20)
+	prompt.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	prompt.add_theme_constant_override("outline_size", 6)
+	prompt.anchor_left = 0.5; prompt.anchor_right = 0.5; prompt.anchor_top = 1.0; prompt.anchor_bottom = 1.0
+	prompt.offset_left = -200; prompt.offset_right = 200; prompt.offset_top = -120; prompt.offset_bottom = -90
+	prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	prompt.visible = false
+	layer.add_child(prompt)
+	ui.prompt = prompt
 	var loading := Label.new()
 	loading.text = "Loading Amsterdam..."
 	loading.add_theme_font_size_override("font_size", 30)
@@ -292,6 +304,7 @@ func _set_mode(m: String) -> void:
 		cam.active = true
 		cam.target = walker.global_position
 		cam.dist = 260.0
+	ui.prompt.visible = false
 	ui.panel.visible = m == "map"
 	ui.minimap.visible = m == "walk"
 	ui.walk_hint.visible = m == "walk"
@@ -360,7 +373,9 @@ func _process(delta: float) -> void:
 	if mode == "walk":
 		focus = walker.global_position
 		streamer.radius = 1100.0
-		traffic.player = walker.global_position
+		traffic.player = walker.global_position if walker.vehicle == null else Vector3(1e9, 0, 1e9)
+		ui.prompt.text = walker.prompt
+		ui.prompt.visible = walker.prompt != ""
 		var n: String = streamer.nearest_name(focus)
 		if n != "":
 			ui.area.text = n
@@ -391,6 +406,8 @@ func _process(delta: float) -> void:
 			print("t=%.1f %s" % [_shot_t, ui.stats.text.replace("\n", " | ")])
 		if args.has("run") and walker.active:
 			_test_run()
+		if args.has("vehicle") and walker.active:
+			_test_vehicle(args.vehicle)
 		if args.get("view") == "tram" and _follow == null and traffic.count().tram > 0 and _shot_t < 6.0:
 			_ride()
 		if _shot_t < 0.0:
@@ -417,6 +434,59 @@ func _test_run() -> void:
 		walker.cam_yaw -= dt * 0.8
 	if Engine.get_process_frames() % 10 == 0:
 		print("run t=%.1f pos=%s state=%s speed=%.1f" % [_run_t, walker.global_position.snapped(Vector3.ONE * 0.1), walker.state, walker.speed])
+
+
+# --vehicle=car|bus|tram: walk up to the nearest one, press E, drive (or ride)
+# for a while, save <shot>-in.png, press E again; logs every step.
+var _veh_t := 0.0
+var _veh_step := 0
+var _veh_target = null
+func _test_vehicle(kind: String) -> void:
+	_veh_t += get_process_delta_time()
+	var press := func(k: Key, down := true) -> void:
+		var e := InputEventKey.new(); e.physical_keycode = k; e.keycode = k; e.pressed = down
+		Input.parse_input_event(e)
+	if _veh_step == 0 and _veh_t > 1.0:
+		var best = null
+		for v in traffic.vehicles:
+			if v.kind == kind and (best == null or v.pos.distance_to(Vector2(walker.global_position.x, walker.global_position.z)) < best.pos.distance_to(Vector2(walker.global_position.x, walker.global_position.z))):
+				best = v
+		if best == null:
+			return
+		_veh_target = best
+		_beside(best)
+		walker.cam_yaw = best.parts[0][0].rotation.y + PI / 2
+		print("veh: next to a %s, prompt in a moment" % kind)
+		_veh_step = 1; _veh_t = 0.0
+	elif _veh_step == 1 and _veh_t > 0.5:
+		_beside(_veh_target)             # it may have driven on meanwhile
+		print("veh: prompt='%s'" % walker.prompt)
+		press.call(KEY_E); press.call(KEY_E, false)
+		_veh_step = 2; _veh_t = 0.0
+	elif _veh_step == 2 and _veh_t > 0.3:
+		if walker.vehicle == null:
+			print("veh: FAILED to get in"); _veh_step = 9; return
+		if kind == "car":
+			if _veh_t < 0.6: press.call(KEY_W)
+			if _veh_t > 4.0 and _veh_t < 4.3: press.call(KEY_A)
+			if _veh_t > 5.5 and _veh_t < 5.8: press.call(KEY_A, false)
+		if Engine.get_process_frames() % 10 == 0:
+			print("veh: in %s at %s speed=%.1f prompt='%s'" % [walker.vehicle.kind, walker.global_position.snapped(Vector3.ONE * 0.1), walker.speed, walker.prompt])
+		if _veh_t > 9.0:
+			get_viewport().get_texture().get_image().save_png(String(args.shot).replace(".png", "-in.png"))
+			press.call(KEY_W, false)
+			press.call(KEY_E); press.call(KEY_E, false)
+			_veh_step = 3; _veh_t = 0.0
+	elif _veh_step == 3 and _veh_t > 0.5:
+		print("veh: out=%s at %s body=%s" % [walker.vehicle == null, walker.global_position.snapped(Vector3.ONE * 0.1), walker.body.visible])
+		_veh_step = 4
+
+
+func _beside(v: Dictionary) -> void:
+	var n: Node3D = v.parts[v.parts.size() / 2][0]
+	var f := Vector2(-sin(n.rotation.y), -cos(n.rotation.y))
+	var side := Vector2(-f.y, f.x) * 2.2
+	walker.global_position = Vector3(n.position.x + side.x, 0.0, n.position.z + side.y)
 
 
 func _thousands(n: int) -> String:

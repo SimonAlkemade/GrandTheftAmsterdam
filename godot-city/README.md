@@ -18,6 +18,7 @@ macOS, Windows and Linux.
 | Space | jump |
 | Mouse (click to capture) / right-drag / two-finger swipe | look |
 | Wheel | camera distance |
+| E | get in or out of the car, bus or tram next to you |
 | M (or Tab, G) | switch to the map |
 | Esc | free the mouse |
 
@@ -35,6 +36,11 @@ headlights and the tram and bus destination signs light up. Fall into a
 canal and you swim; swim to a quay to climb out.
 
 ## Traffic
+
+Press E next to a car to take the wheel: WASD or the arrow keys drive,
+Space brakes, and walls, canals and other traffic stop you. Press E next to
+a bus or tram to ride it along its route. E again gets you out; a car you
+leave stays parked where you left it.
 
 `scripts/traffic.gd` joins every tile's road and tram-track polylines into
 one graph and drives about 70 cars, 7 buses and 9 trams around you. Cars

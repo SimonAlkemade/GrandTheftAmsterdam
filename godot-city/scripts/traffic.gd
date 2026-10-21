@@ -75,7 +75,7 @@ func remove_tile(key: String) -> void:
 		by_kind[e.kind].erase(id)
 		edges.erase(id)
 	for v in vehicles.duplicate():
-		if gone.has(v.edge):
+		if gone.has(v.edge) and not v.get("driver", false) and not v.get("parked", false):
 			_despawn(v)
 
 
@@ -213,7 +213,7 @@ func _process(delta: float) -> void:
 	delta = minf(delta, 0.1)
 	var counts := {"car": 0, "bus": 0, "tram": 0}
 	for v in vehicles.duplicate():
-		if v.pos.distance_to(Vector2(focus.x, focus.z)) > spawn_radius + 160.0:
+		if v.pos.distance_to(Vector2(focus.x, focus.z)) > spawn_radius + 160.0 and not _occupied(v):
 			_despawn(v)
 		else:
 			counts[v.kind] += 1
@@ -221,7 +221,8 @@ func _process(delta: float) -> void:
 		if counts[kind] < target[kind]:
 			_spawn(kind)                  # one per kind per frame: no bursts
 	for v in vehicles.duplicate():
-		_drive(v, delta)
+		if not v.get("driver", false) and not v.get("parked", false):
+			_drive(v, delta)
 
 
 func _drive(v: Dictionary, dt: float) -> void:
@@ -310,6 +311,48 @@ func _behind(trail: Array, front: Vector2, back: float) -> Vector2:
 		left -= d
 		p = q
 	return p
+
+
+# ---- the player and vehicles ------------------------------------------------------
+
+func _occupied(v: Dictionary) -> bool:
+	return v.get("driver", false) or v.get("rider", false)
+
+
+# Distance from p to a vehicle's body: each section is a segment along its length.
+func body_distance(v: Dictionary, p: Vector2) -> float:
+	var best := INF
+	for part in v.parts:
+		if part[2] < 1.0:
+			continue                          # tram bellows
+		var n: Node3D = part[0]
+		var c := Vector2(n.position.x, n.position.z)
+		var f: Vector2 = Vector2(-sin(n.rotation.y), -cos(n.rotation.y)) * (part[2] / 2.0 - 0.8)
+		best = minf(best, Geometry2D.get_closest_point_to_segment(p, c - f, c + f).distance_to(p))
+	return best
+
+
+## The vehicle whose body is closest to p, within `within` metres of its side, or {}.
+func nearest(p: Vector2, within: float) -> Dictionary:
+	var best := {}
+	var bd := within
+	for v in vehicles:
+		if v.pos.distance_to(p) > 40.0:
+			continue
+		var d := body_distance(v, p) - (1.3 if v.kind == "car" else 1.5)
+		if d < bd:
+			bd = d; best = v
+	return best
+
+
+## Whether p is inside some vehicle other than `except`.
+func blocked(p: Vector2, except: Dictionary) -> bool:
+	for v in vehicles:
+		if v == except or v.pos.distance_to(p) > 40.0:
+			continue
+		if body_distance(v, p) < (1.1 if v.kind == "car" else 1.4):
+			return true
+	return false
 
 
 func count() -> Dictionary:
