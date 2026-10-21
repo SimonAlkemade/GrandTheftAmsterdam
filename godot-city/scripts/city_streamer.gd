@@ -29,6 +29,11 @@ var _mutex := Mutex.new()
 var _loading := 0
 var _tick := 0.0
 var _kit := {}
+# In a browser there are no threads and no tile files on disk: tiles are
+# fetched next to the page and built on the main thread, one per frame.
+var _web := OS.has_feature("web")
+var _base_url := ""
+var _fetched: Array = []
 
 
 func setup(materials) -> void:
@@ -39,6 +44,8 @@ func setup(materials) -> void:
 		return
 	index = JSON.parse_string(f.get_as_text())
 	tile_size = float(index.tile)
+	if _web:
+		_base_url = str(JavaScriptBridge.eval("location.href.replace(/[#?].*$/, '').replace(/[^/]*$/, '')"))
 	_overview()
 	_make_kit()
 
@@ -63,10 +70,15 @@ func _overview() -> void:
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(x1 - x0, z1 - z0)
 	var m := StandardMaterial3D.new()
-	var img := Image.load_from_file(ProjectSettings.globalize_path(data_dir + "overview.jpg"))
-	if img:
-		img.generate_mipmaps()
-		m.albedo_texture = ImageTexture.create_from_image(img)
+	var set_image := func(bytes: PackedByteArray) -> void:
+		var img := Image.new()
+		if bytes.size() and img.load_jpg_from_buffer(bytes) == OK:
+			img.generate_mipmaps()
+			m.albedo_texture = ImageTexture.create_from_image(img)
+	if _web:
+		_http_get("data/overview.jpg", func(code: int, body: PackedByteArray): set_image.call(body if code == 200 else PackedByteArray()))
+	else:
+		set_image.call(FileAccess.get_file_as_bytes(data_dir + "overview.jpg"))
 	m.roughness = 1.0
 	m.disable_fog = true
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
@@ -119,6 +131,9 @@ func _process(delta: float) -> void:
 	_mutex.unlock()
 	if r != null:
 		_integrate(r)
+	elif _fetched.size():
+		var f: Array = _fetched.pop_front()
+		_build(f[0], f[1])
 
 
 func _tile_distance(i: int, j: int) -> float:
@@ -142,7 +157,11 @@ func _update_tiles() -> void:
 			continue
 		tiles[w[1]] = {"state": "loading"}
 		_loading += 1
-		WorkerThreadPool.add_task(_task.bind(w[1]))
+		if _web:
+			_http_get("data/tiles/%s.json" % w[1], func(code: int, body: PackedByteArray):
+				_fetched.append([w[1], body.get_string_from_utf8() if code == 200 else ""]))
+		else:
+			WorkerThreadPool.add_task(_task.bind(w[1]))
 	for key in tiles.keys():
 		var t: Dictionary = tiles[key]
 		if t.state != "ready":
@@ -154,10 +173,25 @@ func _update_tiles() -> void:
 			tile_removed.emit(key)
 
 
+func _http_get(path: String, done: Callable) -> void:
+	var h := HTTPRequest.new()
+	add_child(h)
+	h.request_completed.connect(func(_result, code, _headers, body):
+		h.queue_free()
+		done.call(code, body))
+	if h.request(_base_url + path) != OK:
+		h.queue_free()
+		done.call(0, PackedByteArray())
+
+
 # Worker thread: read, decode and mesh one tile.
 func _task(key: String) -> void:
 	var f := FileAccess.open(data_dir + "tiles/%s.json" % key, FileAccess.READ)
-	var data = JSON.parse_string(f.get_as_text()) if f else null
+	_build(key, f.get_as_text() if f else "")
+
+
+func _build(key: String, text: String) -> void:
+	var data = JSON.parse_string(text) if text != "" else null
 	var r := {}
 	if typeof(data) == TYPE_DICTIONARY:
 		r = TileBuilder.new().build_tile(data)
