@@ -9,6 +9,12 @@ signal tile_removed(key: String)
 const TileBuilder := preload("res://scripts/tile_builder.gd")
 const BUILDING_MATS := ["facade_", "ground_home_", "ground_shop_", "trim_", "office", "boat", "roof_"]
 const STREET_MATS := ["road", "bike", "walk", "tram", "rail", "rails", "bridge"]
+const MINI_CELL := 64.0
+# Minimap layers, drawn in this order, and the surfaces each is made of.
+const MINI := {
+	"water": ["water"], "green": ["park", "grass", "garden", "pitch"], "walk": ["walk", "plaza", "bike", "bridge"],
+	"road": ["road"], "tram": ["tram"], "roof": ["roof_0", "roof_1", "roof_2", "roof_flat"],
+}
 
 var mats
 var data_dir := "res://data/"
@@ -156,12 +162,63 @@ func _task(key: String) -> void:
 	if typeof(data) == TYPE_DICTIONARY:
 		r = TileBuilder.new().build_tile(data)
 		r.instances = _instance_buffers(r.points)
+		r.mini = _minimap_cells(r.surfaces)
 	else:
 		r = {"key": key, "failed": true, "rect": Rect2()}
 	_mutex.lock()
 	_done.append(r)
 	_loading -= 1
 	_mutex.unlock()
+
+
+# The tile's surfaces flattened to 2D triangles per minimap layer, bucketed
+# into cells so the minimap draws only what is near the player. A triangle
+# goes into every cell its bounding box touches (canals are big triangles).
+func _minimap_cells(surfaces: Dictionary) -> Dictionary:
+	var cells := {}
+	for layer in MINI:
+		for mname in MINI[layer]:
+			if not surfaces.has(mname):
+				continue
+			var v: PackedVector3Array = surfaces[mname][0]
+			for t in range(0, v.size() - 2, 3):
+				var a := Vector2(v[t].x, v[t].z); var b := Vector2(v[t + 1].x, v[t + 1].z); var c := Vector2(v[t + 2].x, v[t + 2].z)
+				if absf((b - a).cross(c - a)) < 0.05:
+					continue                    # edge-on from above (gable ends): no area
+				var c0 := Vector2i(floori(minf(a.x, minf(b.x, c.x)) / MINI_CELL), floori(minf(a.y, minf(b.y, c.y)) / MINI_CELL))
+				var c1 := Vector2i(floori(maxf(a.x, maxf(b.x, c.x)) / MINI_CELL), floori(maxf(a.y, maxf(b.y, c.y)) / MINI_CELL))
+				for cx in range(c0.x, c1.x + 1):
+					for cy in range(c0.y, c1.y + 1):
+						var k := Vector2i(cx, cy)
+						if not cells.has(k):
+							cells[k] = {}
+						if not cells[k].has(layer):
+							cells[k][layer] = PackedVector2Array()
+						var arr: PackedVector2Array = cells[k][layer]
+						arr.append(a); arr.append(b); arr.append(c)
+						cells[k][layer] = arr
+	return cells
+
+
+## Minimap triangles of every loaded tile near `p`: [[layer, PackedVector2Array], ...] in MINI order.
+func minimap_near(p: Vector2, radius: float) -> Array:
+	var out := []
+	var r := ceili(radius / MINI_CELL)
+	var cp := Vector2i(floori(p.x / MINI_CELL), floori(p.y / MINI_CELL))
+	for layer in MINI:
+		for t in tiles.values():
+			if t.state != "ready" or not t.result.has("mini"):
+				continue
+			var rect: Rect2 = t.result.rect
+			if not rect.grow(radius).has_point(p):
+				continue
+			var cells: Dictionary = t.result.mini
+			for cx in range(cp.x - r, cp.x + r + 1):
+				for cy in range(cp.y - r, cp.y + r + 1):
+					var c = cells.get(Vector2i(cx, cy))
+					if c != null and c.has(layer):
+						out.append([layer, c[layer]])
+	return out
 
 
 # MultiMesh buffers (3x4 transform + colour per instance), built off-thread.

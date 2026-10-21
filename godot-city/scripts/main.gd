@@ -1,10 +1,11 @@
 extends Node3D
 ## Amsterdam from open data: the city streams in around the camera, cars,
 ## GVB buses and trams drive the real street and track network, and you can
-## drop down and walk.
-##   Map mode:  drag to pan, right-drag to rotate, wheel/pinch to zoom.
-##   Walk mode: WASD, Shift runs, Space jumps, mouse looks, Esc frees the mouse.
-## Test arguments (after `--`): --shot=out.png --view=map|tram|walk --hour=17 --wait=12
+## run around it on foot. You start on the Dam; M switches to the map.
+##   On foot: WASD, Shift runs, Space jumps, mouse looks, Esc frees the mouse.
+##   Map:     drag to pan, right-drag to rotate, wheel/pinch to zoom.
+## Test arguments (after `--`): --shot=out.png --view=map|tram|walk --hour=17
+##   --wait=12 --run (walk mode: hold W and Shift, then turn, to test running)
 
 const Materials := preload("res://scripts/materials.gd")
 const Streamer := preload("res://scripts/city_streamer.gd")
@@ -12,6 +13,7 @@ const Traffic := preload("res://scripts/traffic.gd")
 const MapCamera := preload("res://scripts/map_camera.gd")
 const Walker := preload("res://scripts/walker.gd")
 const Models := preload("res://scripts/vehicle_models.gd")
+const Minimap := preload("res://scripts/minimap.gd")
 
 var mats
 var streamer
@@ -28,6 +30,8 @@ var args := {}
 var _shot_t := -1.0
 var _follow = null
 var traffic_on := true
+var _pending_walk := false
+var _walk_at := Vector3.ZERO
 
 
 func _ready() -> void:
@@ -60,6 +64,10 @@ func _ready() -> void:
 
 	_ui()
 	_set_hour(hour)
+	# Start on foot on the Dam, as soon as the ground there has loaded.
+	_walk_at = start
+	_pending_walk = args.get("view", "walk") == "walk"
+	_hud()
 	if args.has("shot"):
 		_shot_t = float(args.get("wait", "14"))
 		streamer.radius = 1600.0
@@ -67,7 +75,7 @@ func _ready() -> void:
 			"map":
 				cam.dist = float(args.get("dist", "650")); cam.pitch = deg_to_rad(float(args.get("pitch", "58")))
 			"walk":
-				_set_mode("walk")
+				pass
 			"tram":
 				cam.dist = 140.0; cam.pitch = deg_to_rad(64)
 
@@ -142,6 +150,7 @@ func _ui() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
 	var panel := PanelContainer.new()
+	ui.panel = panel
 	panel.position = Vector2(14, 14)
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(0.06, 0.07, 0.09, 0.82); sb.set_corner_radius_all(8); sb.set_content_margin_all(12)
@@ -159,7 +168,7 @@ func _ui() -> void:
 	box.add_child(modes)
 	for m in ["map", "walk"]:
 		var b := Button.new()
-		b.text = "Map" if m == "map" else "Walk (G)"
+		b.text = "Map" if m == "map" else "On foot (M)"
 		b.toggle_mode = true
 		b.button_pressed = m == mode
 		b.focus_mode = Control.FOCUS_NONE
@@ -222,14 +231,49 @@ func _ui() -> void:
 	_help()
 
 
+# The on-foot HUD: minimap bottom left, key hints top left.
+func _hud() -> void:
+	var layer := CanvasLayer.new()
+	add_child(layer)
+	var mm := Minimap.new()
+	mm.streamer = streamer; mm.traffic = traffic; mm.walker = walker
+	mm.anchor_top = 1.0; mm.anchor_bottom = 1.0
+	layer.add_child(mm)
+	mm.offset_left = 22; mm.offset_right = 22 + Minimap.SIZE
+	mm.offset_top = -Minimap.SIZE - 22; mm.offset_bottom = -22
+	mm.visible = false
+	ui.minimap = mm
+	var hint := Label.new()
+	hint.text = "WASD  move     Shift  run     Space  jump\nMouse  look     Wheel  zoom     M  map     Esc  free mouse"
+	hint.add_theme_font_size_override("font_size", 13)
+	hint.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	hint.add_theme_constant_override("outline_size", 4)
+	hint.position = Vector2(20, 16)
+	hint.visible = false
+	layer.add_child(hint)
+	ui.walk_hint = hint
+	var loading := Label.new()
+	loading.text = "Loading Amsterdam..."
+	loading.add_theme_font_size_override("font_size", 30)
+	loading.add_theme_color_override("font_outline_color", Color.BLACK)
+	loading.add_theme_constant_override("outline_size", 8)
+	loading.set_anchors_preset(Control.PRESET_CENTER)
+	loading.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	loading.grow_vertical = Control.GROW_DIRECTION_BOTH
+	loading.visible = _pending_walk
+	layer.add_child(loading)
+	ui.loading = loading
+
+
 func _help() -> void:
-	ui.help.text = ("Drag: pan   Right-drag / Q E R F: rotate & tilt\nWheel or pinch: zoom   WASD: move   G: walk here"
+	ui.help.text = ("Drag: pan   Right-drag / Q E R F: rotate & tilt\nWheel or pinch: zoom   WASD: move   M: walk here"
 		if mode == "map" else
-		"WASD: walk   Shift: run   Space: jump\nMouse: look   Wheel: camera distance   Esc: mouse   G: map")
+		"WASD: walk   Shift: run   Space: jump\nMouse: look   Wheel: camera distance   Esc: mouse   M: map")
 
 
 func _set_mode(m: String) -> void:
 	_follow = null
+	_pending_walk = false
 	if m == mode:
 		ui["mode_" + m].button_pressed = true
 		return
@@ -243,10 +287,14 @@ func _set_mode(m: String) -> void:
 			at = _nearest_street(at)
 		walker.enter(at, cam.yaw)
 	else:
+		ui.area.text = ""
 		walker.leave()
 		cam.active = true
 		cam.target = walker.global_position
 		cam.dist = 260.0
+	ui.panel.visible = m == "map"
+	ui.minimap.visible = m == "walk"
+	ui.walk_hint.visible = m == "walk"
 	_help()
 
 
@@ -290,7 +338,7 @@ func _ride() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
-		if event.physical_keycode == KEY_G:
+		if event.physical_keycode in [KEY_G, KEY_M, KEY_TAB]:
 			_set_mode("map" if mode == "walk" else "walk")
 		elif event.physical_keycode == KEY_ESCAPE and mode == "walk":
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -299,6 +347,13 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
+	if _pending_walk and not streamer.tile_at(_walk_at).is_empty():
+		_pending_walk = false
+		cam.target = _walk_at
+		await get_tree().physics_frame         # let the new walls join the physics world
+		_set_mode("walk")
+		ui.loading.visible = false
+		return
 	var focus: Vector3
 	if mode == "walk":
 		focus = walker.global_position
@@ -332,6 +387,8 @@ func _process(delta: float) -> void:
 		_shot_t -= delta
 		if Engine.get_process_frames() % 20 == 0:
 			print("t=%.1f %s" % [_shot_t, ui.stats.text.replace("\n", " | ")])
+		if args.has("run") and walker.active:
+			_test_run()
 		if args.get("view") == "tram" and _follow == null and traffic.count().tram > 0 and _shot_t < 6.0:
 			_ride()
 		if _shot_t < 0.0:
@@ -339,6 +396,25 @@ func _process(delta: float) -> void:
 			img.save_png(args.shot)
 			print("shot saved: ", args.shot, " ", ui.stats.text.replace("\n", " | "))
 			get_tree().quit()
+
+
+# --run: hold W (and Shift after a moment), then turn with the mouse; prints
+# where the player got to so a headless run can check it moved.
+var _run_t := 0.0
+func _test_run() -> void:
+	var dt := get_process_delta_time()
+	_run_t += dt
+	var key := func(k: Key) -> void:
+		var e := InputEventKey.new(); e.physical_keycode = k; e.keycode = k; e.pressed = true
+		Input.parse_input_event(e)
+	if _run_t < 0.3:
+		key.call(KEY_W)
+	if _run_t > 1.5 and _run_t < 1.5 + dt * 1.5:
+		key.call(KEY_SHIFT)
+	if _run_t > 4.0 and _run_t < 6.0:
+		walker.cam_yaw -= dt * 0.8
+	if Engine.get_process_frames() % 10 == 0:
+		print("run t=%.1f pos=%s state=%s speed=%.1f" % [_run_t, walker.global_position.snapped(Vector3.ONE * 0.1), walker.state, walker.speed])
 
 
 func _thousands(n: int) -> String:

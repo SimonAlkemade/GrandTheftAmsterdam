@@ -44,6 +44,7 @@ func enter(at: Vector3, yaw: float) -> void:
 	visible = true
 	active = true
 	cam.near = 0.15
+	cam.fov = 68.0
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	for i in 24:
 		var p := {"h": Human.new(), "pos": Vector3.ZERO, "heading": 0.0, "speed": 1.1 + _rng.randf() * 0.45, "turn": 0.0, "stag": 0.0}
@@ -58,6 +59,7 @@ func leave() -> void:
 	visible = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	cam.near = 1.0
+	cam.fov = 45.0
 	for p in peds:
 		p.h.queue_free()
 	peds.clear()
@@ -66,9 +68,13 @@ func leave() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not active:
 		return
-	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+	# Look with the captured mouse, or by dragging when it is free (trackpads).
+	if event is InputEventMouseMotion and (Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or event.button_mask & MOUSE_BUTTON_MASK_RIGHT):
 		cam_yaw -= event.relative.x * 0.0042
 		cam_pitch = clampf(cam_pitch + event.relative.y * 0.0035, -0.25, 1.25)
+	elif event is InputEventPanGesture:
+		cam_yaw -= event.delta.x * 0.03
+		cam_pitch = clampf(cam_pitch + event.delta.y * 0.02, -0.25, 1.25)
 	elif event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP: cam_dist = maxf(2.2, cam_dist * 0.89)
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN: cam_dist = minf(14.0, cam_dist * 1.12)
@@ -118,6 +124,9 @@ func _physics_process(delta: float) -> void:
 		var y := global_position.y
 		move_and_slide()
 		global_position.y = y
+		# Pushing against a wall: slow to what you actually make, so you don't run on the spot.
+		var real := get_real_velocity(); real.y = 0.0
+		speed = minf(speed, real.length() + 0.25)
 		var g = _ground(global_position)
 		if swimming:
 			global_position.y = SWIM_Y
@@ -138,7 +147,7 @@ func _physics_process(delta: float) -> void:
 			elif global_position.y > floor_y + 0.05:
 				grounded = false
 		if state != "swim":
-			state = ("jump" if vy > 0.0 else "fall") if not grounded else ("run" if speed > 3.2 else ("walk" if speed > 0.25 else "idle"))
+			state = ("jump" if vy > 0.0 else "fall") if not grounded else ("run" if speed > 3.2 else ("walk" if speed > 0.6 else "idle"))
 	body.rotation.y = heading
 	body.position.y = (body.rotation.x / 1.25 * 0.9) if state == "swim" else 0.0
 	body.animate(delta, state, speed)
@@ -159,6 +168,7 @@ func _camera(delta: float) -> void:
 	var want := head + dir * d
 	want.y = maxf(want.y, 0.3)
 	cam.global_position = cam.global_position.lerp(want, 1.0 - exp(-delta * 14.0))
+	cam.fov = lerpf(cam.fov, 74.0 if state == "run" else 68.0, 1.0 - exp(-delta * 4.0))
 	cam.look_at(head - Vector3(0, 0.2, 0), Vector3.UP)
 
 
