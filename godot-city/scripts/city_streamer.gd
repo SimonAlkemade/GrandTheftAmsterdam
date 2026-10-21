@@ -10,6 +10,22 @@ const TileBuilder := preload("res://scripts/tile_builder.gd")
 const BUILDING_MATS := ["facade_", "ground_home_", "ground_shop_", "trim_", "office", "boat", "roof_"]
 const STREET_MATS := ["road", "bike", "walk", "tram", "rail", "rails", "bridge"]
 const MINI_CELL := 64.0
+const JS_FETCH := """
+window.amsFetch = function (path, id, binary) {
+  fetch(path).then(function (r) {
+    if (!r.ok) throw new Error(path + " returned " + r.status);
+    return binary ? r.blob() : r.text();
+  }).then(function (d) {
+    if (!binary) { window.amsDone(id, 200, d); return; }
+    var fr = new FileReader();
+    fr.onload = function () { window.amsDone(id, 200, String(fr.result).split(",")[1] || ""); };
+    fr.readAsDataURL(d);
+  }).catch(function (e) {
+    console.error("Amsterdam: could not load " + path, e);
+    window.amsDone(id, 0, "");
+  });
+};
+"""
 # Minimap layers, drawn in this order, and the surfaces each is made of.
 const MINI := {
 	"water": ["water"], "green": ["park", "grass", "garden", "pitch"], "walk": ["walk", "plaza", "bike", "bridge"],
@@ -32,8 +48,11 @@ var _kit := {}
 # In a browser there are no threads and no tile files on disk: tiles are
 # fetched next to the page and built on the main thread, one per frame.
 var _web := OS.has_feature("web")
-var _base_url := ""
 var _fetched: Array = []
+var _js_done                 # JavaScriptObject callback, kept alive here
+var _js_pending := {}
+var _js_next := 0
+var failed := 0              # tiles that could not be loaded
 
 
 func setup(materials) -> void:
@@ -45,7 +64,11 @@ func setup(materials) -> void:
 	index = JSON.parse_string(f.get_as_text())
 	tile_size = float(index.tile)
 	if _web:
-		_base_url = str(JavaScriptBridge.eval("location.href.replace(/[#?].*$/, '').replace(/[^/]*$/, '')"))
+		# The page's own fetch() resolves paths the way the host serves them;
+		# an absolute URL built from location.href does not always.
+		JavaScriptBridge.eval(JS_FETCH, true)
+		_js_done = JavaScriptBridge.create_callback(_on_js_done)
+		JavaScriptBridge.get_interface("window").amsDone = _js_done
 	_overview()
 	_make_kit()
 
@@ -76,7 +99,8 @@ func _overview() -> void:
 			img.generate_mipmaps()
 			m.albedo_texture = ImageTexture.create_from_image(img)
 	if _web:
-		_http_get("data/overview.jpg", func(code: int, body: PackedByteArray): set_image.call(body if code == 200 else PackedByteArray()))
+		_http_get("data/overview.jpg", true, func(code: int, data: String):
+			set_image.call(Marshalls.base64_to_raw(data) if code == 200 else PackedByteArray()))
 	else:
 		set_image.call(FileAccess.get_file_as_bytes(data_dir + "overview.jpg"))
 	m.roughness = 1.0
@@ -158,8 +182,8 @@ func _update_tiles() -> void:
 		tiles[w[1]] = {"state": "loading"}
 		_loading += 1
 		if _web:
-			_http_get("data/tiles/%s.json" % w[1], func(code: int, body: PackedByteArray):
-				_fetched.append([w[1], body.get_string_from_utf8() if code == 200 else ""]))
+			_http_get("data/tiles/%s.json" % w[1], false, func(code: int, data: String):
+				_fetched.append([w[1], data if code == 200 else ""]))
 		else:
 			WorkerThreadPool.add_task(_task.bind(w[1]))
 	for key in tiles.keys():
@@ -173,15 +197,21 @@ func _update_tiles() -> void:
 			tile_removed.emit(key)
 
 
-func _http_get(path: String, done: Callable) -> void:
-	var h := HTTPRequest.new()
-	add_child(h)
-	h.request_completed.connect(func(_result, code, _headers, body):
-		h.queue_free()
-		done.call(code, body))
-	if h.request(_base_url + path) != OK:
-		h.queue_free()
-		done.call(0, PackedByteArray())
+# Fetch a file published next to the page; `done(code, text)` gets the text,
+# or base64 for `binary`.
+func _http_get(path: String, binary: bool, done: Callable) -> void:
+	var id := _js_next
+	_js_next += 1
+	_js_pending[id] = done
+	JavaScriptBridge.eval("window.amsFetch(%s, %d, %s)" % [JSON.stringify(path), id, "true" if binary else "false"], true)
+
+
+func _on_js_done(args: Array) -> void:
+	var id := int(args[0])
+	var done: Callable = _js_pending.get(id, Callable())
+	_js_pending.erase(id)
+	if done.is_valid():
+		done.call(int(args[1]), str(args[2]))
 
 
 # Worker thread: read, decode and mesh one tile.
@@ -199,6 +229,7 @@ func _build(key: String, text: String) -> void:
 		r.mini = _minimap_cells(r.surfaces)
 	else:
 		r = {"key": key, "failed": true, "rect": Rect2()}
+		push_error("Could not load tile %s" % key)
 	_mutex.lock()
 	_done.append(r)
 	_loading -= 1
@@ -291,8 +322,11 @@ func _instance_buffers(points: Dictionary) -> Dictionary:
 
 
 func _integrate(r: Dictionary) -> void:
-	if r.get("failed", false) or not tiles.has(r.key):
-		tiles.erase(r.key)
+	if not tiles.has(r.key):
+		return
+	if r.get("failed", false):
+		tiles[r.key] = {"state": "failed"}    # don't retry it every 0.4 s
+		failed += 1
 		return
 	var root := Node3D.new()
 	root.name = "tile_" + r.key

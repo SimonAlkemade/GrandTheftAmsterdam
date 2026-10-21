@@ -347,6 +347,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
+	if _pending_walk and streamer.failed > 0:
+		ui.loading.text = "Could not load the city's map tiles.\nReload the page; if it keeps happening, the browser console says which file failed."
 	if _pending_walk and not streamer.tile_at(_walk_at).is_empty():
 		_pending_walk = false
 		cam.target = _walk_at
