@@ -400,7 +400,7 @@ func _process(delta: float) -> void:
 	traffic.enabled = traffic_on and (mode == "walk" or cam.dist < 1600.0)
 	var s: Dictionary = streamer.stats()
 	var c: Dictionary = traffic.count()
-	ui.stats.text = "%d tiles (%d loading) · %s buildings\n%d cars · %d buses · %d trams · %d Cantas · %d cyclists · %d fps" % [
+	ui.stats.text = "%d chunks (%d loading) · %s buildings\n%d cars · %d buses · %d trams · %d Cantas · %d cyclists · %d fps" % [
 		s.ready, s.loading, _thousands(s.buildings), c.car, c.bus, c.tram, c.canta, c.bike, Engine.get_frames_per_second()]
 	sun.global_position = focus
 	if _shot_t >= 0.0:

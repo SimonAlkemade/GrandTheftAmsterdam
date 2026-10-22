@@ -7,7 +7,8 @@ Copies the tiles and adds what GDScript cannot do cheaply:
   * triangles for every polygon with holes ("t": earcut indices over the
     concatenated rings) -- Godot's Geometry2D cannot triangulate holes;
   * "s": 1 on buildings with a shop, cafe or hotel inside (a shopfront);
-and turns the facade bump maps into normal maps.
+turns the facade bump maps into normal maps, and finally cuts every tile
+into 375 m chunks for streaming (chunk_godot_tiles.py).
 """
 import json
 import re
@@ -16,6 +17,7 @@ import sys
 from pathlib import Path
 
 import mapbox_earcut as earcut
+from chunk_godot_tiles import chunk_data
 import numpy as np
 from shapely import STRtree
 from shapely.geometry import Point, Polygon
@@ -85,8 +87,9 @@ def main(src="out/city", dst="godot-city/data"):
         (dst / "tiles" / f.name).write_text(json.dumps(t, separators=(",", ":"), ensure_ascii=False))
         n += 1
     normal_maps(Path(dst).parent / "textures")
+    chunks = chunk_data(dst)               # the pieces the game streams
     size = sum(p.stat().st_size for p in (dst / "tiles").glob("*.json"))
-    print(f"{n} tiles, {size / 1e6:.1f} MB -> {dst}")
+    print(f"{n} tiles in {chunks} chunks, {size / 1e6:.1f} MB -> {dst}")
 
 
 if __name__ == "__main__":

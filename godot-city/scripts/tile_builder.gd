@@ -171,15 +171,19 @@ func building(bd: Dictionary, i: int, seed: int) -> void:
 # the wall on the pavement: [positions, yaws]. A spot is dropped when it
 # would be inside another building (a party wall), in a canal, or hard
 # against something across the way.
-func _street_bikes(bl: Array, water: Array, seed: int) -> Array:
+func _street_bikes(bl: Array, water: Array, seed: int, neighbours: Array = []) -> Array:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed + 77
 	const CELL := 25.0
 	var rings := []
 	var grid := {}
-	for i in bl.size():
-		var bd: Dictionary = bl[i]
-		var ring := pts(bd.g) if bd.has("g") else pts(bd.r[0])
+	# This chunk's buildings, then the outlines of those just across its edges.
+	for i in bl.size() + neighbours.size():
+		var ring: PackedVector2Array
+		if i < bl.size():
+			ring = pts(bl[i].g) if bl[i].has("g") else pts(bl[i].r[0])
+		else:
+			ring = pts(neighbours[i - bl.size()])
 		rings.append(ring)
 		var box := Rect2(ring[0], Vector2.ZERO)
 		for q in ring: box = box.expand(q)
@@ -273,7 +277,7 @@ func side(mat: String, p: PackedVector2Array, y0: float, y1: float) -> void:
 ## Call on a fresh instance: TileBuilder.new().build_tile(data).
 func build_tile(data: Dictionary) -> Dictionary:
 	var ti: int = int(data.tile[0]); var tj: int = int(data.tile[1])
-	var tile_size := 1500.0
+	var tile_size := float(data.get("size", 1500.0))   # a chunk's size, or a whole tile's
 	var x0 := ti * tile_size; var z1 := -tj * tile_size; var z0 := -(tj + 1) * tile_size
 	var seed := absi(hash(Vector2i(ti, tj)))
 	var bl: Array = data.get("buildings", [])
@@ -325,7 +329,7 @@ func build_tile(data: Dictionary) -> Dictionary:
 	for l in data.get("waterLabels", []):
 		labels.append([str(l[0]), Vector2(float(l[1]) / 10.0, -float(l[2]) / 10.0), float(l[3])])
 		names.append([Vector2(float(l[1]) / 10.0, -float(l[2]) / 10.0), str(l[0])])
-	var street_bikes := _street_bikes(bl, water, seed)
+	var street_bikes := _street_bikes(bl, water, seed, data.get("nb", []))
 	var points := {}
 	for k in ["trees", "lamps", "benches", "bikes", "bins", "signals", "bollards"]:
 		points[k] = pts(data.get(k, []))

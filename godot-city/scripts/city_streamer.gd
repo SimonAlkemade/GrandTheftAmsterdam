@@ -1,7 +1,11 @@
 extends Node3D
-## Streams the city in 1.5 km tiles around `focus`. Reading and meshing a
-## tile happens on WorkerThreadPool threads; the main thread only turns the
-## finished arrays into nodes, one tile per frame, so the game never stalls.
+## Streams the city around `focus` in chunks (375 m; chunk_godot_tiles.py
+## cuts them), nearest first, and drops them again behind you. A chunk lives
+## in its 1.5 km tile file, which is read once while any of its chunks is
+## wanted. Reading and meshing happen on WorkerThreadPool threads; the main
+## thread only turns finished arrays into nodes, one chunk per frame. (Data
+## without chunks streams whole tiles the same way.) In this script a "tile"
+## is the streamed unit, a chunk.
 
 signal tile_added(key: String, result: Dictionary)
 signal tile_removed(key: String)
@@ -37,8 +41,12 @@ const MINI := {
 var mats
 var data_dir := "res://data/"
 var index := {}
-var tile_size := 1500.0
-var tiles := {}              # key -> { state, node, result }
+var tile_size := 1500.0      # the streamed unit: a chunk (or a whole tile in unchunked data)
+var file_size := 1500.0      # a tile file
+var tiles := {}              # chunk key -> { state, node, result }
+var _files := {}             # tile file key -> its parsed data (null while a browser fetch is on its way)
+var _file_mutex := Mutex.new()
+var _per_file := 1           # chunks along a tile file's side
 var focus := Vector3.ZERO
 var radius := 1500.0
 var show := {"buildings": true, "streets": true, "trees": true, "furniture": true}
@@ -64,7 +72,9 @@ func setup(materials) -> void:
 		push_error("No city data in %s. Run prepare_godot_city.py first (see README)." % data_dir)
 		return
 	index = JSON.parse_string(f.get_as_text())
-	tile_size = float(index.tile)
+	file_size = float(index.tile)
+	tile_size = float(index.get("chunk", index.tile))
+	_per_file = int(round(file_size / tile_size))
 	if _web:
 		# The page's own fetch() resolves paths the way the host serves them;
 		# an absolute URL built from location.href does not always.
@@ -164,7 +174,7 @@ func _process(delta: float) -> void:
 	var r = null
 	_mutex.lock()
 	if _done.size():
-		# Integrate the finished tile nearest to the focus first.
+		# Integrate the finished chunk nearest to the focus first.
 		var best := 0
 		for i in _done.size():
 			if _done[i].rect.get_center().distance_to(Vector2(focus.x, focus.z)) < _done[best].rect.get_center().distance_to(Vector2(focus.x, focus.z)):
@@ -175,8 +185,16 @@ func _process(delta: float) -> void:
 	if r != null:
 		_integrate(r)
 	elif _fetched.size():
-		var f: Array = _fetched.pop_front()
-		_build(f[0], f[1])
+		# Browser: build the nearest wanted chunk whose file has arrived.
+		for n in _fetched.size():
+			var key: String = _fetched[n]
+			var fk := _file_of(key)
+			if not _files.has(fk):
+				_fetch_file(fk)
+			elif _files[fk] != null:
+				_fetched.remove_at(n)
+				_build(key, _chunk_data(fk, key))
+				break
 
 
 func _tile_distance(i: int, j: int) -> float:
@@ -188,32 +206,74 @@ func _update_tiles() -> void:
 	if index.is_empty():
 		return
 	var want := []
-	for t in index.tiles:
+	for t in index.get("chunks", index.tiles):
 		var d := _tile_distance(int(t[0]), int(t[1]))
 		if d < radius:
 			want.append([maxf(d, 0.0), "%d_%d" % [int(t[0]), int(t[1])]])
 	want.sort_custom(func(a, b): return a[0] < b[0])
 	for w in want:
-		if _loading >= 3:
+		if _loading >= (8 if _web else 4):
 			break
 		if tiles.has(w[1]):
 			continue
 		tiles[w[1]] = {"state": "loading"}
 		_loading += 1
 		if _web:
-			_http_get("data/tiles/%s.json" % w[1], false, func(code: int, data: String):
-				_fetched.append([w[1], data if code == 200 else ""]))
+			_fetched.append(w[1])
+			_fetch_file(_file_of(w[1]))
 		else:
 			WorkerThreadPool.add_task(_task.bind(w[1]))
+	# Drop chunks well behind you (the margin stops them flickering in and out).
+	var keep := radius + maxf(500.0, tile_size)
 	for key in tiles.keys():
 		var t: Dictionary = tiles[key]
-		if t.state != "ready":
+		if t.state == "loading":
 			continue
 		var ij: PackedStringArray = key.split("_")
-		if _tile_distance(int(ij[0]), int(ij[1])) > radius + 1600.0:
-			t.node.queue_free()
+		if _tile_distance(int(ij[0]), int(ij[1])) > keep:
+			if t.state == "ready":
+				t.node.queue_free()
+				tile_removed.emit(key)
 			tiles.erase(key)
-			tile_removed.emit(key)
+	# Let go of tile files none of whose chunks are wanted any more.
+	var needed := {}
+	for key in tiles:
+		needed[_file_of(key)] = true
+	for key in _fetched:
+		needed[_file_of(key)] = true
+	_file_mutex.lock()
+	for fk in _files.keys():
+		if not needed.has(fk) and _files[fk] != null:
+			_files.erase(fk)
+	_file_mutex.unlock()
+
+
+## The tile file a chunk lives in.
+func _file_of(key: String) -> String:
+	if _per_file == 1:
+		return key
+	var ij := key.split("_")
+	return "%d_%d" % [floori(float(int(ij[0])) / _per_file), floori(float(int(ij[1])) / _per_file)]
+
+
+## One chunk out of its parsed tile file (an unchunked file is its own chunk).
+func _chunk_data(fk: String, key: String):
+	var d = _files.get(fk)
+	if typeof(d) != TYPE_DICTIONARY:
+		return null
+	if d.has("chunks"):
+		return d.chunks.get(key)
+	return d
+
+
+# Browser: fetch a tile file once; its chunks are built as they come up.
+func _fetch_file(fk: String) -> void:
+	if _files.has(fk):
+		return
+	_files[fk] = null
+	_http_get("data/tiles/%s.json" % fk, false, func(code: int, text: String):
+		var d = JSON.parse_string(text) if code == 200 and text != "" else null
+		_files[fk] = d if typeof(d) == TYPE_DICTIONARY else {})
 
 
 # Fetch a file published next to the page; `done(code, text)` gets the text,
@@ -233,14 +293,21 @@ func _on_js_done(args: Array) -> void:
 		done.call(int(args[1]), str(args[2]))
 
 
-# Worker thread: read, decode and mesh one tile.
+# Worker thread: mesh one chunk, reading its tile file first if no other
+# chunk has (the lock makes the others wait for that one read).
 func _task(key: String) -> void:
-	var f := FileAccess.open(data_dir + "tiles/%s.json" % key, FileAccess.READ)
-	_build(key, f.get_as_text() if f else "")
+	var fk := _file_of(key)
+	_file_mutex.lock()
+	if not _files.has(fk):
+		var f := FileAccess.open(data_dir + "tiles/%s.json" % fk, FileAccess.READ)
+		var d = JSON.parse_string(f.get_as_text()) if f else null
+		_files[fk] = d if typeof(d) == TYPE_DICTIONARY else {}
+	var data = _chunk_data(fk, key)
+	_file_mutex.unlock()
+	_build(key, data)
 
 
-func _build(key: String, text: String) -> void:
-	var data = JSON.parse_string(text) if text != "" else null
+func _build(key: String, data) -> void:
 	var r := {}
 	if typeof(data) == TYPE_DICTIONARY:
 		r = TileBuilder.new().build_tile(data)

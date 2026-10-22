@@ -1,7 +1,8 @@
 # Amsterdam in Godot
 
 The whole of Amsterdam (285,000 buildings, from Overture Maps / OpenStreetMap
-open data) streams in 1.5 km tiles around you. Cars, GVB buses and
+open data) streams in 375 m chunks around you: the ones nearest you are built
+first, one at a time, and the ones far behind you are dropped again. Cars, GVB buses and
 three-section trams drive the real street and tram-track network, and you
 run around it on foot, GTA-style: you start on the Dam with a minimap in
 the corner, among pedestrians, with the traffic stopping for you.
@@ -59,13 +60,18 @@ plus bellows, articulated along the path its front has driven.
 ```bash
 python fetch_city.py data/city                          # Overture Maps, ~10 min
 python prepare_city_tiles.py data/city out/city
-python prepare_godot_city.py out/city godot-city/data
+python prepare_godot_city.py out/city godot-city/data   # ends by cutting the chunks
 ```
+
+Each `data/tiles/i_j.json` is one 1.5 km download holding its 16 chunks
+(`amsterdam/chunks.py` cuts them; streets, canals and parks are clipped at the
+chunk edges so they still join up). To re-cut existing data, for instance at
+another size: `python chunk_godot_tiles.py godot-city/data 375`.
 
 ## Files
 
 - `scripts/main.gd`: scene setup, sun and sky, UI, mode switching
-- `scripts/city_streamer.gd`: threaded tile loading and meshing, queries
+- `scripts/city_streamer.gd`: streams chunks: threaded loading and meshing, queries
 - `scripts/tile_builder.gd`: tile JSON to mesh arrays (facades, roofs, streets, water)
 - `scripts/materials.gd`: the texture atlas materials
 - `scripts/traffic.gd`, `scripts/vehicle_models.gd`: traffic
