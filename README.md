@@ -11,6 +11,9 @@ you can walk, cycle and drive around in, GTA-style.
 - **E** gets you into whatever is next to you: drive a car or a Canta, ride a
   bike (parked at racks and along the house fronts, or a cyclist's), or ride a
   bus or tram along its route.
+- **Mission 1, parcel courier:** pick parcels up and deliver them across town,
+  GTA-style yellow circles, a yellow route on the minimap and the map, a clock
+  and pay.
 - A time-of-day slider with lit windows, lamps and headlights at night.
 
 **Play:** open `godot-city/` in Godot 4.4 or newer and press F5. Controls and

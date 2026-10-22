@@ -45,6 +45,8 @@ var car_yaw := 0.0
 var car_speed := 0.0
 var _mouse_idle := 10.0
 var _rack_bike := {}
+var carrying := false          # a parcel (the courier mission)
+var _parcel: MeshInstance3D
 var _rng := RandomNumberGenerator.new()
 
 
@@ -57,6 +59,13 @@ func setup(s, camera: Camera3D) -> void:
 	body = Human.new()
 	body.callv("build", LOOK.duplicate())   # callv garbles a read-only (const) array
 	add_child(body)
+	_parcel = MeshInstance3D.new()
+	var box := BoxMesh.new(); box.size = Vector3(0.42, 0.3, 0.34)
+	var card := StandardMaterial3D.new(); card.albedo_color = Color("b8874f"); card.roughness = 0.9
+	_parcel.mesh = box; _parcel.material_override = card
+	_parcel.position = Vector3(0, 1.08, -0.34)
+	_parcel.visible = false
+	body.add_child(_parcel)
 	visible = false
 
 
@@ -202,6 +211,14 @@ func _physics_process(delta: float) -> void:
 	body.rotation.y = heading
 	body.position.y = (body.rotation.x / 1.25 * 0.9) if state == "swim" else 0.0
 	body.animate(delta, state, speed)
+	_parcel.visible = carrying and state != "swim" and state != "climb"
+	if _parcel.visible:                  # both arms round the parcel
+		for arm in [[body.sh_l, body.el_l], [body.sh_r, body.el_r]]:
+			arm[0].rotation.x = 0.55
+			arm[1].rotation.x = 1.25
+		body.sh_l.rotation.z = 0.3; body.sh_r.rotation.z = -0.3   # hands in towards the middle
+	else:
+		body.sh_l.rotation.z = 0.08; body.sh_r.rotation.z = -0.08
 	_peds(delta)
 	_camera(delta)
 

@@ -36,6 +36,17 @@ The slider sets the time of day; at night the windows, street lamps,
 headlights and the tram and bus destination signs light up. Fall into a
 canal and you swim; swim to a quay to climb out.
 
+## Mission 1: parcel courier
+
+As soon as you are on your feet the job starts. A yellow circle (with a beam
+of light you can see over the roofs) marks where to pick up a parcel; walk,
+cycle or drive into it and you carry the parcel, and a second circle marks
+where it goes. The text at the bottom says what to do and how far it is; the
+route along the streets is drawn in yellow on the minimap and, in the map
+view (M), over the streets themselves. Each delivery has a clock set by the
+length of the route and pays €25 plus €1 for every 6 seconds to spare; then
+the next parcel is waiting. Run out of time and the parcel goes back.
+
 ## Traffic
 
 Cyclists ride the bike paths and the edges of the streets, and parked bikes
@@ -80,6 +91,7 @@ another size: `python chunk_godot_tiles.py godot-city/data 375`.
 - `models/canta.glb`: the Canta, modelled by `blender/make_canta.py`
 - `models/bike_*.glb`: the bikes, modelled in Blender by `blender/make_bikes.py`
   (`pip install bpy`, then `python blender/make_bikes.py godot-city/models`)
+- `scripts/mission.gd`: the parcel courier: circles, routing (A* over the street graph), clock and pay
 - `scripts/minimap.gd`: the round minimap (built from the tile meshes)
 - `scripts/map_camera.gd`: map-app orbit camera with trackpad gestures
 

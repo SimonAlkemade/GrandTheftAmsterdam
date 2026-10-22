@@ -14,12 +14,14 @@ const MapCamera := preload("res://scripts/map_camera.gd")
 const Walker := preload("res://scripts/walker.gd")
 const Models := preload("res://scripts/vehicle_models.gd")
 const Minimap := preload("res://scripts/minimap.gd")
+const Mission := preload("res://scripts/mission.gd")
 
 var mats
 var streamer
 var traffic
 var cam: Camera3D
 var walker
+var mission
 var sun: DirectionalLight3D
 var env: Environment
 var sky_mat: ProceduralSkyMaterial
@@ -62,6 +64,9 @@ func _ready() -> void:
 	add_child(walker)
 	walker.setup(streamer, cam)
 	walker.traffic = traffic
+	mission = Mission.new()
+	add_child(mission)
+	mission.setup(streamer, traffic, walker)
 
 	_ui()
 	_set_hour(hour)
@@ -246,7 +251,9 @@ func _hud() -> void:
 	mm.offset_left = 22; mm.offset_right = 22 + Minimap.SIZE
 	mm.offset_top = -Minimap.SIZE - 22; mm.offset_bottom = -22
 	mm.visible = false
+	mm.mission = mission
 	ui.minimap = mm
+	_mission_hud(layer)
 	var hint := Label.new()
 	hint.text = "WASD / arrows  move     Shift  run     Space  jump     E  get in or out of a vehicle\nMouse  look     Wheel  zoom     M  map     Esc  free mouse"
 	hint.add_theme_font_size_override("font_size", 13)
@@ -262,7 +269,7 @@ func _hud() -> void:
 	prompt.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
 	prompt.add_theme_constant_override("outline_size", 6)
 	prompt.anchor_left = 0.5; prompt.anchor_right = 0.5; prompt.anchor_top = 1.0; prompt.anchor_bottom = 1.0
-	prompt.offset_left = -200; prompt.offset_right = 200; prompt.offset_top = -120; prompt.offset_bottom = -90
+	prompt.offset_left = -200; prompt.offset_right = 200; prompt.offset_top = -118; prompt.offset_bottom = -88
 	prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	prompt.visible = false
 	layer.add_child(prompt)
@@ -278,6 +285,83 @@ func _hud() -> void:
 	loading.visible = _pending_walk
 	layer.add_child(loading)
 	ui.loading = loading
+
+
+# The job on screen: what to do and how far (bottom middle), the clock while a parcel
+# is on board, money (top right), and big announcements in the middle.
+func _mission_hud(layer: CanvasLayer) -> void:
+	var bar := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.04, 0.05, 0.06, 0.72); sb.set_corner_radius_all(6); sb.set_content_margin_all(10)
+	sb.border_color = Color(1.0, 0.82, 0.08); sb.border_width_left = 4
+	bar.add_theme_stylebox_override("panel", sb)
+	bar.anchor_left = 0.5; bar.anchor_right = 0.5; bar.anchor_top = 1.0; bar.anchor_bottom = 1.0
+	bar.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	bar.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	bar.offset_bottom = -26
+	bar.visible = false
+	layer.add_child(bar)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 18)
+	bar.add_child(row)
+	var obj := Label.new()
+	obj.add_theme_font_size_override("font_size", 20)
+	row.add_child(obj)
+	var clock := Label.new()
+	clock.add_theme_font_size_override("font_size", 20)
+	clock.add_theme_color_override("font_color", Color(1.0, 0.82, 0.08))
+	row.add_child(clock)
+	ui.mission_bar = bar; ui.mission_text = obj; ui.mission_clock = clock
+	var cash := Label.new()
+	cash.add_theme_font_size_override("font_size", 30)
+	cash.add_theme_color_override("font_color", Color("6fd36a"))
+	cash.add_theme_color_override("font_outline_color", Color.BLACK)
+	cash.add_theme_constant_override("outline_size", 8)
+	cash.anchor_left = 1.0; cash.anchor_right = 1.0
+	cash.offset_left = -320; cash.offset_right = -24; cash.offset_top = 14
+	cash.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	cash.visible = false
+	layer.add_child(cash)
+	ui.cash = cash
+	var big := VBoxContainer.new()
+	big.set_anchors_preset(Control.PRESET_CENTER)
+	big.grow_horizontal = Control.GROW_DIRECTION_BOTH; big.grow_vertical = Control.GROW_DIRECTION_BOTH
+	big.offset_top = -150; big.offset_bottom = -60
+	big.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(big)
+	for k in [["title", 44, Color(1.0, 0.82, 0.08)], ["sub", 22, Color.WHITE]]:
+		var l := Label.new()
+		l.add_theme_font_size_override("font_size", k[1])
+		l.add_theme_color_override("font_color", k[2])
+		l.add_theme_color_override("font_outline_color", Color.BLACK)
+		l.add_theme_constant_override("outline_size", 10)
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		big.add_child(l)
+		ui["big_" + k[0]] = l
+	ui.big = big
+	big.modulate.a = 0.0
+	mission.announce.connect(func(title, sub):
+		ui.big_title.text = title
+		ui.big_sub.text = sub
+		big.modulate.a = 1.0
+		var tw := create_tween()
+		tw.tween_interval(3.0)
+		tw.tween_property(big, "modulate:a", 0.0, 0.8))
+
+
+func _mission_ui() -> void:
+	var text: String = mission.objective()
+	ui.mission_bar.visible = text != ""
+	if text != "":
+		var d: float = mission.distance_left()
+		ui.mission_text.text = "%s  ·  %s" % [text, ("%d m" % d) if d < 1000.0 else ("%.1f km" % (d / 1000.0))]
+		ui.mission_clock.visible = mission.state == "deliver"
+		var t := maxf(mission.time_left, 0.0)
+		ui.mission_clock.text = "%d:%02d" % [int(t) / 60, int(t) % 60]
+		ui.mission_clock.add_theme_color_override("font_color", Color(1, 0.3, 0.25) if t < 15.0 else Color(1.0, 0.82, 0.08))
+	ui.cash.visible = mission.state != "off"
+	ui.cash.text = "€ %d\n%d parcel%s" % [mission.money, mission.delivered, "" if mission.delivered == 1 else "s"]
+	mission.show_route_3d(mode == "map")
 
 
 func _help() -> void:
@@ -371,6 +455,8 @@ func _process(delta: float) -> void:
 		await get_tree().physics_frame         # let the new walls join the physics world
 		_set_mode("walk")
 		ui.loading.visible = false
+		if mission.state == "off" and not args.has("nomission"):
+			mission.start()
 		return
 	var focus: Vector3
 	if mode == "walk":
@@ -403,6 +489,7 @@ func _process(delta: float) -> void:
 	ui.stats.text = "%d chunks (%d loading) · %s buildings\n%d cars · %d buses · %d trams · %d Cantas · %d cyclists · %d fps" % [
 		s.ready, s.loading, _thousands(s.buildings), c.car, c.bus, c.tram, c.canta, c.bike, Engine.get_frames_per_second()]
 	sun.global_position = focus
+	_mission_ui()
 	if _shot_t >= 0.0:
 		_shot_t -= delta
 		if Engine.get_process_frames() % 20 == 0:
@@ -414,6 +501,8 @@ func _process(delta: float) -> void:
 			_test_run()
 		if args.has("vehicle") and walker.active:
 			_test_vehicle(args.vehicle)
+		if args.has("mission") and (walker.active or _mis_step == 3):   # step 3 is in the map view
+			_test_mission()
 		if args.get("view") == "tram" and _follow == null and traffic.count().tram > 0 and _shot_t < 6.0:
 			_ride()
 		if _shot_t < 0.0:
@@ -510,6 +599,52 @@ func _test_vehicle(kind: String) -> void:
 	elif _veh_step == 3 and _veh_t > 0.5:
 		print("veh: out=%s at %s body=%s" % [walker.vehicle == null, walker.global_position.snapped(Vector3.ONE * 0.1), walker.body.visible])
 		_veh_step = 4
+
+
+# --mission: walk up to the pickup (shot <shot>-pickup.png), step into it, look
+# at the route in the map view (<shot>-map.png), then step into the drop-off.
+var _mis_t := 0.0
+var _mis_step := 0
+func _test_mission() -> void:
+	_mis_t += get_process_delta_time()
+	var m = mission
+	if _mis_step == 0 and m.state == "pickup" and m.target != Vector3.INF and m.route.size() > 2:
+		# Stand on the route about 15 m short of the circle, facing it.
+		var r: PackedVector2Array = m.route
+		var at: Vector2 = r[r.size() - 1]
+		var walked := 0.0
+		for i in range(r.size() - 1, 0, -1):
+			walked += r[i].distance_to(r[i - 1])
+			at = r[i - 1]
+			if walked > 15.0: break
+		walker.global_position = Vector3(at.x, 0, at.y)
+		var d := Vector2(m.target.x, m.target.z) - at
+		walker.cam_yaw = atan2(-d.x, -d.y)
+		walker.cam_pitch = 0.22
+		print("mis: pickup at %s, %.0f m by road; objective '%s'" % [m.target_name, m.route_len, m.objective()])
+		_mis_step = 1; _mis_t = 0.0
+	elif _mis_step == 1:
+		var d := Vector2(m.target.x, m.target.z) - Vector2(walker.global_position.x, walker.global_position.z)
+		walker.cam_yaw = atan2(-d.x, -d.y)
+		if _mis_t > 4.0:
+			get_viewport().get_texture().get_image().save_png(String(args.shot).replace(".png", "-pickup.png"))
+			walker.global_position = m.target
+			_mis_step = 2; _mis_t = 0.0
+	elif _mis_step == 2 and _mis_t > 4.0:
+		print("mis: state=%s carrying=%s objective='%s' route=%.0f m clock=%.0f s" % [m.state, walker.carrying, m.objective(), m.route_len, m.time_left])
+		get_viewport().get_texture().get_image().save_png(String(args.shot).replace(".png", "-carry.png"))
+		_set_mode("map")
+		cam.dist = 900.0; cam.pitch = deg_to_rad(28.0)
+		cam.target = (walker.global_position + m.target) / 2.0
+		_mis_step = 3; _mis_t = 0.0
+	elif _mis_step == 3 and _mis_t > 6.0:
+		get_viewport().get_texture().get_image().save_png(String(args.shot).replace(".png", "-map.png"))
+		_set_mode("walk")
+		walker.global_position = m.target
+		_mis_step = 4; _mis_t = 0.0
+	elif _mis_step == 4 and _mis_t > 1.5:
+		print("mis: after the drop-off: state=%s delivered=%d money=%d carrying=%s" % [m.state, m.delivered, m.money, walker.carrying])
+		_mis_step = 5
 
 
 func _beside(v: Dictionary) -> void:

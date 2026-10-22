@@ -11,11 +11,13 @@ const COLORS := {
 	"road": Color("c9ccd1"), "tram": Color("8e6b4a"), "roof": Color("858a93"),
 }
 const VEHICLE := {"car": Color("e8e8e8"), "bus": Color("4f8dff"), "tram": Color("ff5a4f"), "bike": Color("ffd166"), "canta": Color("ff3b3b")}
+const MISSION := Color(1.0, 0.82, 0.08)
 const DOT := {"car": 4.5, "bus": 7.0, "tram": 7.0, "bike": 2.6, "canta": 3.5}
 
 var streamer
 var traffic
 var walker
+var mission                          # the current job: its route and target show here
 var _tris: Array = []
 var _cached_at := Vector2(INF, INF)
 var _disc: Panel
@@ -69,6 +71,9 @@ func _draw_map() -> void:
 	var ci := _map.get_canvas_item()
 	for t in _tris:
 		RenderingServer.canvas_item_add_triangle_array(ci, PackedInt32Array(), t[1], PackedColorArray([COLORS[t[0]]]))
+	if mission and mission.route.size() > 1:
+		_map.draw_polyline(mission.route, Color(0, 0, 0, 0.5), 12.0, true)
+		_map.draw_polyline(mission.route, MISSION, 7.0, true)
 	for v in traffic.vehicles:
 		if v.pos.distance_to(p) < VIEW + 10.0:
 			_map.draw_circle(v.pos, DOT[v.kind], VEHICLE[v.kind])
@@ -80,6 +85,15 @@ func _draw_top() -> void:
 	var c := size / 2.0
 	_top.draw_arc(c, SIZE / 2.0 - 2.0, 0, TAU, 96, Color(0, 0, 0, 0.85), 4.0, true)
 	_top.draw_arc(c, SIZE / 2.0 - 5.0, 0, TAU, 96, Color(1, 1, 1, 0.25), 1.5, true)
+	# The target: a yellow blip, held on the rim while it is out of range.
+	if mission and mission.target != Vector3.INF:
+		var d := Vector2(mission.target.x, mission.target.z) - Vector2(walker.global_position.x, walker.global_position.z)
+		var on := d.rotated(walker.cam_yaw) * ((SIZE / 2.0) / VIEW)
+		var far := on.length() > SIZE / 2.0 - 16.0
+		if far:
+			on = on.normalized() * (SIZE / 2.0 - 16.0)
+		_top.draw_circle(c + on, 10.0 if not far else 8.0, Color(0, 0, 0, 0.7))
+		_top.draw_circle(c + on, 7.5 if not far else 6.0, MISSION)
 	var north := c + Vector2(0, -1).rotated(walker.cam_yaw) * (SIZE / 2.0 - 14.0)
 	_top.draw_circle(north, 10.0, Color("1b1e22"))
 	_top.draw_string(get_theme_default_font(), north + Vector2(-5, 5), "N", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)
