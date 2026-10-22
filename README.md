@@ -1,3 +1,33 @@
+# Grand Theft Amsterdam
+
+All of Amsterdam, about 285,000 buildings from open map data, as a Godot game
+you can walk, cycle and drive around in, GTA-style.
+
+![Riding a bike on the Damrak](shots-godot/side-in.png)
+
+- **On foot** from the Dam, with pedestrians, a round minimap and street names.
+- **Traffic** on the real street, bike-path and tram network: cars, GVB buses,
+  three-section trams, cyclists and red Cantas.
+- **E** gets you into whatever is next to you: drive a car or a Canta, ride a
+  bike (parked at racks and along the house fronts, or a cyclist's), or ride a
+  bus or tram along its route.
+- A time-of-day slider with lit windows, lamps and headlights at night.
+
+**Play:** open `godot-city/` in Godot 4.4 or newer and press F5. Controls and
+details are in [godot-city/README.md](godot-city/README.md).
+
+The bikes and the Canta are modelled in Blender by scripts in `blender/`.
+`generate_buildings.py` is an untested-against-live-services pipeline that
+cuts facade photos out of the City of Amsterdam's open street panoramas and
+sends them to Tripo for 3D models.
+
+**Data:** the city in `godot-city/data/` is derived from
+[Overture Maps](https://overturemaps.org) (which includes OpenStreetMap data,
+© OpenStreetMap contributors, ODbL). Rebuild it with the scripts listed in
+`godot-city/README.md`.
+
+---
+
 # gta-amsterdam: the facade upscaler
 
 This pipeline turns Amsterdam's open 3D building data into detailed buildings

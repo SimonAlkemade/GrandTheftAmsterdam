@@ -13,7 +13,6 @@ out/city/overview.jpg
 out/shots_city/
 data/city/
 data_city_fetch.log
-godot-city/data/
 godot-city/.godot/
 shots-godot/*.log
 web-build/
