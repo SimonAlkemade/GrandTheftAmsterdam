@@ -8,16 +8,18 @@ extends CharacterBody3D
 ## next to a bus or tram rides it along its route; E again gets you out.
 
 const Human := preload("res://scripts/human.gd")
+const Models := preload("res://scripts/vehicle_models.gd")
 const SWIM_Y := -1.2
 const BRIDGE_Y := 0.3
 const ENTER_RANGE := 3.0
 # Per vehicle: camera height above the road, camera distance, half width.
-const VEHICLE_CAM := {"car": [1.7, 7.5, 0.9], "bus": [3.2, 15.0, 1.3], "tram": [3.4, 19.0, 1.2], "bike": [1.5, 4.8, 0.4]}
+const VEHICLE_CAM := {"car": [1.7, 7.5, 0.9], "bus": [3.2, 15.0, 1.3], "tram": [3.4, 19.0, 1.2], "bike": [1.5, 4.8, 0.4], "canta": [1.9, 6.0, 0.6]}
 # What you can drive: top speed (and with Shift), reverse, acceleration,
 # steering, how far the nose reaches, the half length, and the speed at
 # which steering is at full strength.
 const DRIVE := {
 	"car": {"top": 17.0, "boost": 17.0, "rev": 5.0, "acc": 7.0, "steer": 1.5, "nose": 2.2, "half": 2.1, "full": 5.0},
+	"canta": {"top": 12.5, "boost": 12.5, "rev": 3.0, "acc": 4.5, "steer": 1.9, "nose": 1.3, "half": 1.15, "full": 3.5},   # 45 km/h, by law
 	"bike": {"top": 5.5, "boost": 8.5, "rev": 1.0, "acc": 2.2, "steer": 2.4, "nose": 1.0, "half": 0.9, "full": 2.0},
 }
 const LOOK := [Color("f2efe8"), Color("1d1f24"), Color("d9a07a"), Color("2b1d14"), Color("f5f5f5"), Color("3d5a80")]
@@ -130,7 +132,7 @@ func _physics_process(delta: float) -> void:
 		return
 	_mouse_idle += delta
 	if vehicle != null:
-		if vehicle.kind == "car" or vehicle.kind == "bike":
+		if DRIVE.has(vehicle.kind):
 			_drive(delta)
 		else:
 			_ride()
@@ -140,7 +142,7 @@ func _physics_process(delta: float) -> void:
 		return
 	var here := Vector2(global_position.x, global_position.z)
 	var near: Dictionary = traffic.nearest(here, ENTER_RANGE) if traffic else {}
-	prompt = "" if near.is_empty() else {"car": "E  drive this car", "bus": "E  ride the bus", "tram": "E  ride the tram", "bike": "E  ride this bike"}[near.kind]
+	prompt = "" if near.is_empty() else {"car": "E  drive this car", "bus": "E  ride the bus", "tram": "E  ride the tram", "bike": "E  ride this bike", "canta": "E  drive this Canta"}[near.kind]
 	if prompt == "" and Engine.get_physics_frames() % 6 == 0:
 		_rack_bike = streamer.parked_bike(here, 1.6)
 	if prompt == "" and not _rack_bike.is_empty() and _rack_bike.at.distance_to(here) < 1.8:
@@ -248,7 +250,7 @@ func _get_in() -> void:
 	body.visible = false
 	speed = 0.0
 	state = "idle"
-	if v.kind == "car" or v.kind == "bike":
+	if DRIVE.has(v.kind):
 		v.driver = true
 		v.parked = false
 		var n: Node3D = v.parts[0][0]
@@ -269,7 +271,7 @@ func _get_out() -> void:
 	var v: Dictionary = vehicle
 	vehicle = null
 	body.visible = true
-	if v.kind == "car" or v.kind == "bike":
+	if DRIVE.has(v.kind):
 		v.driver = false
 		v.parked = true                  # it stays where you left it
 		v.speed = 0.0
@@ -313,7 +315,7 @@ func _drive(dt: float) -> void:
 	elif throttle < 0.0:
 		car_speed = move_toward(car_speed, -spec.rev, (12.0 if car_speed > 0.0 else 4.0) * dt)
 	else:
-		car_speed = move_toward(car_speed, 0.0, (2.5 if vehicle.kind == "car" else 1.2) * dt)
+		car_speed = move_toward(car_speed, 0.0, (1.2 if vehicle.kind == "bike" else 2.5) * dt)
 	car_yaw += steer * clampf(car_speed / spec.full, -1.0, 1.0) * spec.steer * dt
 	var f := Vector2(-sin(car_yaw), -cos(car_yaw))
 	var c := Vector2(global_position.x, global_position.z)
@@ -336,6 +338,8 @@ func _drive(dt: float) -> void:
 	global_position = Vector3(next.x, y - 0.09, next.y)
 	heading = car_yaw
 	speed = absf(car_speed)
+	if vehicle.kind == "canta":
+		Models.spin_wheels(n, car_speed * dt, 0.22)
 	if vehicle.kind == "bike":
 		n.pedal(dt, car_speed)
 		var lean := clampf(-steer * absf(car_speed) * 0.05, -0.3, 0.3)

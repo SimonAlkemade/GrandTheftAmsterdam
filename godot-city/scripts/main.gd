@@ -400,8 +400,8 @@ func _process(delta: float) -> void:
 	traffic.enabled = traffic_on and (mode == "walk" or cam.dist < 1600.0)
 	var s: Dictionary = streamer.stats()
 	var c: Dictionary = traffic.count()
-	ui.stats.text = "%d tiles (%d loading) · %s buildings\n%d cars · %d buses · %d trams · %d cyclists · %d fps" % [
-		s.ready, s.loading, _thousands(s.buildings), c.car, c.bus, c.tram, c.bike, Engine.get_frames_per_second()]
+	ui.stats.text = "%d tiles (%d loading) · %s buildings\n%d cars · %d buses · %d trams · %d Cantas · %d cyclists · %d fps" % [
+		s.ready, s.loading, _thousands(s.buildings), c.car, c.bus, c.tram, c.canta, c.bike, Engine.get_frames_per_second()]
 	sun.global_position = focus
 	if _shot_t >= 0.0:
 		_shot_t -= delta
@@ -492,7 +492,7 @@ func _test_vehicle(kind: String) -> void:
 			print("veh: FAILED to get in"); _veh_step = 9; return
 		if kind != "bus" and kind != "tram":
 			if _veh_t < 0.6: press.call(KEY_W)
-			if kind != "car" and _veh_t > 2.0 and _veh_t < 2.3: press.call(KEY_SHIFT)
+			if (kind == "bike" or kind == "rack") and _veh_t > 2.0 and _veh_t < 2.3: press.call(KEY_SHIFT)
 			if _veh_t > 4.0 and _veh_t < 4.3: press.call(KEY_A)
 			if _veh_t > 5.5 and _veh_t < 5.8: press.call(KEY_A, false)
 		if args.has("side"):             # look at the rider from the side, close up

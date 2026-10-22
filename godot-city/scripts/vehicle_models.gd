@@ -60,6 +60,27 @@ static func car(color: Color) -> Node3D:
 	return n
 
 
+# A Canta, the narrow Dutch microcar (blender/make_canta.py), in red.
+static var _canta: PackedScene
+
+static func canta(color := Color("9e0b10")) -> Node3D:
+	if _canta == null:
+		_canta = load("res://models/canta.glb")
+	var n: Node3D = _canta.instantiate()
+	var body: MeshInstance3D = n.find_child("body", true, false)
+	for i in body.mesh.get_surface_count():
+		var m := body.mesh.surface_get_material(i)
+		if m and m.resource_name.begins_with("paint"):
+			body.set_surface_override_material(i, mat("canta_%s" % color.to_html(false), color, 0.3, 0.2))
+	return n
+
+
+## Turn a vehicle's wheels (children named wheel_*) for the distance it covered.
+static func spin_wheels(n: Node3D, distance: float, radius: float) -> void:
+	for w in n.find_children("wheel_*", "", true, false):
+		(w as Node3D).rotation.x -= distance / radius
+
+
 # A GVB city bus: white, with the blue band and a lit destination sign.
 static func bus() -> Node3D:
 	var n := Node3D.new()

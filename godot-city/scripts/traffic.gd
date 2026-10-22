@@ -16,13 +16,16 @@ const SNAP := 2.0                 # half-metre grid for joining edge ends
 const KINDS := {
 	"car": {"len": 4.2, "max": 12.5, "lane": 1.4, "y": 0.09, "accel": 3.0},
 	"bike": {"len": 1.8, "max": 5.2, "lane": 2.8, "y": 0.09, "accel": 1.2},
+	"canta": {"len": 2.3, "max": 11.0, "lane": 1.4, "y": 0.09, "accel": 2.2},
 	"bus": {"len": 12.0, "max": 11.0, "lane": 1.9, "y": 0.09, "accel": 1.5},
 	"tram": {"len": 29.8, "max": 11.5, "lane": 0.0, "y": 0.13, "accel": 1.1},
 }
 const TRAM_SECTIONS := [9.6, 9.6, 9.6]
 const CAR_COLORS := ["1b1b1b", "f2f2f2", "8a8f94", "2c4a6e", "7a1e1e", "2f5d3a", "c9b48a", "d9d4c7", "0f2a4a", "b3261e", "4a4f55", "e8e8e8"]
 
-var target := {"car": 70, "bus": 7, "tram": 9, "bike": 35}
+var target := {"car": 70, "bus": 7, "tram": 9, "bike": 35, "canta": 8}
+# Cantas come in a few reds (and now and then another colour).
+const CANTA_COLORS := ["9e0b10", "9e0b10", "b3121a", "8a0a12", "c4161c", "9e0b10", "1d3f73"]
 # Most Amsterdam bikes are black; the rest in the usual colours.
 const BIKE_COLORS := ["111214", "111214", "111214", "111214", "1d2a3a", "6b1e1e", "2f4f3a", "d8d2c4", "7a8a99"]
 var spawn_radius := 420.0
@@ -165,6 +168,9 @@ func _build_model(v: Dictionary) -> void:
 		"bus":
 			var b: Node3D = Models.bus()
 			root.add_child(b); v.parts.append([b, 0.0, 12.0])
+		"canta":
+			var c: Node3D = Models.canta(Color(CANTA_COLORS[_rng.randi() % CANTA_COLORS.size()]))
+			root.add_child(c); v.parts.append([c, 0.0, 2.3])
 		"bike":
 			var rig: Node3D = BikeRig.new()
 			rig.build("oma" if _rng.randf() < 0.55 else "opa", Color(BIKE_COLORS[_rng.randi() % BIKE_COLORS.size()]), "_low")
@@ -227,7 +233,7 @@ func _process(delta: float) -> void:
 	if not enabled:
 		return
 	delta = minf(delta, 0.1)
-	var counts := {"car": 0, "bus": 0, "tram": 0, "bike": 0}
+	var counts := {"car": 0, "bus": 0, "tram": 0, "bike": 0, "canta": 0}
 	for v in vehicles.duplicate():
 		if v.pos.distance_to(Vector2(focus.x, focus.z)) > spawn_radius + 160.0 and not _occupied(v):
 			_despawn(v)
@@ -268,7 +274,7 @@ func _drive(v: Dictionary, dt: float) -> void:
 		gap = minf(gap, pp.dot(fwd) - 3.0)
 	want = minf(want, maxf(0.0, (gap - 1.0) / 1.3))
 	# Buses and trams stop now and then, as if at a stop.
-	if v.kind != "car":
+	if v.kind == "bus" or v.kind == "tram":
 		v.stop_in -= v.speed * dt
 		if v.stop_in < 30.0 and v.dwell <= 0.0:
 			want = minf(want, maxf(0.0, v.stop_in / 3.0))
@@ -316,6 +322,8 @@ func _drive(v: Dictionary, dt: float) -> void:
 		part[0].rotation.y = atan2(-dir.x, -dir.y)
 	if v.kind == "bike":
 		v.parts[0][0].pedal(dt, v.speed)
+	elif v.kind == "canta":
+		Models.spin_wheels(v.parts[0][0], v.speed * dt, 0.22)
 
 
 # The point `back` metres behind the front along the trail.
@@ -334,7 +342,7 @@ func _behind(trail: Array, front: Vector2, back: float) -> Vector2:
 
 # ---- the player and vehicles ------------------------------------------------------
 
-const RADIUS := {"car": 1.3, "bus": 1.5, "tram": 1.5, "bike": 0.5}   # half widths, roughly
+const RADIUS := {"car": 1.3, "bus": 1.5, "tram": 1.5, "bike": 0.5, "canta": 0.8}   # half widths, roughly
 
 
 ## A bike you took from a rack, as a traffic vehicle you drive.
@@ -393,7 +401,7 @@ func blocked(p: Vector2, except: Dictionary) -> bool:
 
 
 func count() -> Dictionary:
-	var c := {"car": 0, "bus": 0, "tram": 0, "bike": 0}
+	var c := {"car": 0, "bus": 0, "tram": 0, "bike": 0, "canta": 0}
 	for v in vehicles: c[v.kind] += 1
 	return c
 

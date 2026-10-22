@@ -10,8 +10,8 @@ const COLORS := {
 	"water": Color("3a78b0"), "green": Color("3f7a4a"), "walk": Color("4b5057"),
 	"road": Color("c9ccd1"), "tram": Color("8e6b4a"), "roof": Color("858a93"),
 }
-const VEHICLE := {"car": Color("e8e8e8"), "bus": Color("4f8dff"), "tram": Color("ff5a4f"), "bike": Color("ffd166")}
-const DOT := {"car": 4.5, "bus": 7.0, "tram": 7.0, "bike": 2.6}
+const VEHICLE := {"car": Color("e8e8e8"), "bus": Color("4f8dff"), "tram": Color("ff5a4f"), "bike": Color("ffd166"), "canta": Color("ff3b3b")}
+const DOT := {"car": 4.5, "bus": 7.0, "tram": 7.0, "bike": 2.6, "canta": 3.5}
 
 var streamer
 var traffic

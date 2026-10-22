@@ -39,7 +39,8 @@ canal and you swim; swim to a quay to climb out.
 
 Cyclists ride the bike paths and the edges of the streets, and parked bikes
 stand at the city's bike racks and in small groups along the house fronts. Press E next to a parked bike, or next to a
-cyclist, to ride it (Shift pedals hard). Press E next to a car to take the wheel: WASD or the arrow keys drive,
+cyclist, to ride it (Shift pedals hard). Red Cantas, the narrow Dutch microcars, potter along the streets too (E to
+drive one, 45 km/h tops). Press E next to a car to take the wheel: WASD or the arrow keys drive,
 Space brakes, and walls, canals and other traffic stop you. Press E next to
 a bus or tram to ride it along its route. E again gets you out; a car you
 leave stays parked where you left it.
@@ -70,6 +71,7 @@ python prepare_godot_city.py out/city godot-city/data
 - `scripts/traffic.gd`, `scripts/vehicle_models.gd`: traffic
 - `scripts/walker.gd`, `scripts/human.gd`: the player and pedestrians
 - `scripts/bike_rig.gd`: a ridden bike: wheels, crank, and the rider's legs and arms on pedals and grips
+- `models/canta.glb`: the Canta, modelled by `blender/make_canta.py`
 - `models/bike_*.glb`: the bikes, modelled in Blender by `blender/make_bikes.py`
   (`pip install bpy`, then `python blender/make_bikes.py godot-city/models`)
 - `scripts/minimap.gd`: the round minimap (built from the tile meshes)
