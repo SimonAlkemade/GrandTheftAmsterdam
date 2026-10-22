@@ -35,6 +35,7 @@ static func wheels(parent: Node3D, half_track: float, axles: Array, r := 0.33) -
 	for z in axles:
 		for x in [-half_track, half_track]:
 			var mi := MeshInstance3D.new(); mi.mesh = c; mi.material_override = mat("tyre", Color("161718"), 0.9)
+			mi.name = "wheel"
 			mi.rotation.z = PI / 2; mi.position = Vector3(x, r, z)
 			parent.add_child(mi)
 
@@ -73,6 +74,19 @@ static func canta(color := Color("9e0b10")) -> Node3D:
 		if m and m.resource_name.begins_with("paint"):
 			body.set_surface_override_material(i, mat("canta_%s" % color.to_html(false), color, 0.3, 0.2))
 	return n
+
+
+## A solid box for a vehicle in traffic, so what you drive can hit it (it moves
+## with the vehicle; nothing moves it).
+static func solid(n: Node3D, size: Vector3, y: float) -> void:
+	var b := AnimatableBody3D.new()
+	b.collision_layer = 4               # VehiclePhysics.TRAFFIC_LAYER
+	b.collision_mask = 0
+	b.sync_to_physics = false
+	var s := BoxShape3D.new(); s.size = size
+	var cs := CollisionShape3D.new(); cs.shape = s; cs.position.y = y
+	b.add_child(cs)
+	n.add_child(b)
 
 
 ## Turn a vehicle's wheels (children named wheel_*) for the distance it covered.

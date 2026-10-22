@@ -164,12 +164,15 @@ func _build_model(v: Dictionary) -> void:
 	match v.kind:
 		"car":
 			var c: Node3D = Models.car(Color(CAR_COLORS[_rng.randi() % CAR_COLORS.size()]))
+			Models.solid(c, Vector3(1.8, 1.3, 4.2), 0.75)
 			root.add_child(c); v.parts.append([c, 0.0, 4.2])
 		"bus":
 			var b: Node3D = Models.bus()
+			Models.solid(b, Vector3(2.55, 3.0, 12.0), 1.6)
 			root.add_child(b); v.parts.append([b, 0.0, 12.0])
 		"canta":
 			var c: Node3D = Models.canta(Color(CANTA_COLORS[_rng.randi() % CANTA_COLORS.size()]))
+			Models.solid(c, Vector3(1.08, 1.4, 2.3), 0.8)
 			root.add_child(c); v.parts.append([c, 0.0, 2.3])
 		"bike":
 			var rig: Node3D = BikeRig.new()
@@ -181,6 +184,7 @@ func _build_model(v: Dictionary) -> void:
 			for k in TRAM_SECTIONS.size():
 				var cab := -1 if k == 0 else (1 if k == TRAM_SECTIONS.size() - 1 else 0)
 				var sec: Node3D = Models.tram_section(TRAM_SECTIONS[k], cab)
+				Models.solid(sec, Vector3(2.4, 3.0, TRAM_SECTIONS[k]), 1.7)
 				root.add_child(sec)
 				v.parts.append([sec, off, TRAM_SECTIONS[k]])
 				off += TRAM_SECTIONS[k] + 0.5

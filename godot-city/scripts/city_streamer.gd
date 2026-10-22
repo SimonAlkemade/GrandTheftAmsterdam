@@ -451,6 +451,18 @@ func _integrate(r: Dictionary) -> void:
 		mi.mesh = meshes[g]
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if g == "buildings" else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		groups[g].add_child(mi)
+	# The ground vehicles drive on (people keep to their own way of walking:
+	# this is on its own collision layer).
+	if r.get("ground_faces", PackedVector3Array()).size():
+		var floor := StaticBody3D.new()
+		floor.collision_layer = 2       # VehiclePhysics.GROUND_LAYER
+		floor.collision_mask = 0
+		var fshape := ConcavePolygonShape3D.new()
+		fshape.backface_collision = true
+		fshape.set_faces(r.ground_faces)
+		var fcs := CollisionShape3D.new(); fcs.shape = fshape
+		floor.add_child(fcs)
+		root.add_child(floor)
 	# Walls to walk into.
 	if r.walls.size():
 		var body := StaticBody3D.new()

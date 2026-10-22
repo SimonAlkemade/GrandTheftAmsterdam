@@ -592,7 +592,12 @@ func _test_vehicle(kind: String) -> void:
 			walker.cam_dist = 2.6
 			walker._mouse_idle = 0.0
 		if Engine.get_process_frames() % 10 == 0:
-			print("veh: in %s at %s speed=%.1f prompt='%s'" % [walker.vehicle.kind, walker.global_position.snapped(Vector3.ONE * 0.1), walker.speed, walker.prompt])
+			var physics := ""
+			if walker.vehicle.has("body"):   # the suspension at work: ride height, pitch and roll
+				var b: VehicleBody3D = walker.vehicle.body
+				var e := b.global_transform.basis.get_euler()
+				physics = " y=%.3f pitch=%.2f° roll=%.2f° steer=%.2f" % [b.global_position.y, rad_to_deg(e.x), rad_to_deg(e.z), b.steering]
+			print("veh: in %s at %s speed=%.1f%s" % [walker.vehicle.kind, walker.global_position.snapped(Vector3.ONE * 0.1), walker.speed, physics])
 		if _veh_t > 9.0:
 			get_viewport().get_texture().get_image().save_png(String(args.shot).replace(".png", "-in.png"))
 			press.call(KEY_W, false); press.call(KEY_SHIFT, false)

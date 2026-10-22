@@ -47,6 +47,18 @@ view (M), over the streets themselves. Each delivery has a clock set by the
 length of the route and pays €25 plus €1 for every 6 seconds to spare; then
 the next parcel is waiting. Run out of time and the parcel goes back.
 
+## Driving physics
+
+What you drive is a real vehicle (Godot's VehicleBody3D, `scripts/vehicle_physics.gd`):
+each wheel is a damped spring with tyre grip, the engine pulls through the
+driven wheels, and the body pitches under braking and acceleration and rolls
+in corners. It hits buildings, quay walls, bridge railings and the traffic
+around you, and a car that goes off a quay ends up on the canal bed. The bike
+leans by exactly the angle that balances its turn (tan lean = speed x yaw rate
+/ g). Each chunk carries the collision floor for this: the street, bridge
+decks, quay walls and canal beds. The traffic itself stays on its routes, but
+each vehicle in it is solid.
+
 ## Traffic
 
 Cyclists ride the bike paths and the edges of the streets, and parked bikes
@@ -86,6 +98,7 @@ another size: `python chunk_godot_tiles.py godot-city/data 375`.
 - `scripts/tile_builder.gd`: tile JSON to mesh arrays (facades, roofs, streets, water)
 - `scripts/materials.gd`: the texture atlas materials
 - `scripts/traffic.gd`, `scripts/vehicle_models.gd`: traffic
+- `scripts/vehicle_physics.gd`: suspension, engine, brakes and steering for what you drive
 - `scripts/walker.gd`, `scripts/human.gd`: the player and pedestrians
 - `scripts/bike_rig.gd`: a ridden bike: wheels, crank, and the rider's legs and arms on pedals and grips
 - `models/canta.glb`: the Canta, modelled by `blender/make_canta.py`

@@ -9,19 +9,15 @@ extends CharacterBody3D
 
 const Human := preload("res://scripts/human.gd")
 const Models := preload("res://scripts/vehicle_models.gd")
+const VPhys := preload("res://scripts/vehicle_physics.gd")
 const SWIM_Y := -2.65          # your feet while swimming: the canal is 1.4 m below the street
 const BRIDGE_Y := 0.3
+const WATER_Y := -1.4          # the canal surface (TileBuilder.WATER_Y)
 const ENTER_RANGE := 3.0
 # Per vehicle: camera height above the road, camera distance, half width.
 const VEHICLE_CAM := {"car": [1.7, 7.5, 0.9], "bus": [3.2, 15.0, 1.3], "tram": [3.4, 19.0, 1.2], "bike": [1.5, 4.8, 0.4], "canta": [1.9, 6.0, 0.6]}
-# What you can drive: top speed (and with Shift), reverse, acceleration,
-# steering, how far the nose reaches, the half length, and the speed at
-# which steering is at full strength.
-const DRIVE := {
-	"car": {"top": 17.0, "boost": 17.0, "rev": 5.0, "acc": 7.0, "steer": 1.5, "nose": 2.2, "half": 2.1, "full": 5.0},
-	"canta": {"top": 12.5, "boost": 12.5, "rev": 3.0, "acc": 4.5, "steer": 1.9, "nose": 1.3, "half": 1.15, "full": 3.5},   # 45 km/h, by law
-	"bike": {"top": 5.5, "boost": 8.5, "rev": 1.0, "acc": 2.2, "steer": 2.4, "nose": 1.0, "half": 0.9, "full": 2.0},
-}
+# What you can drive (and how) is in VehiclePhysics.SPEC.
+const DRIVE := VPhys.SPEC
 const LOOK := [Color("f2efe8"), Color("1d1f24"), Color("d9a07a"), Color("2b1d14"), Color("f5f5f5"), Color("3d5a80")]
 
 var streamer
@@ -56,6 +52,10 @@ func setup(s, camera: Camera3D) -> void:
 	var shape := CapsuleShape3D.new(); shape.radius = 0.32; shape.height = 1.75
 	var cs := CollisionShape3D.new(); cs.shape = shape; cs.position.y = 0.9
 	add_child(cs)
+	# On your own layer: you bump into buildings, but the vehicle you sit in
+	# (whose wheels and box would otherwise meet you inside it) never sees you.
+	collision_layer = 16
+	collision_mask = VPhys.WALL_LAYER
 	body = Human.new()
 	body.callv("build", LOOK.duplicate())   # callv garbles a read-only (const) array
 	add_child(body)
@@ -132,7 +132,7 @@ func _ground(p: Vector3):
 func _free(p: Vector3) -> bool:
 	if streamer.water_at(p) == 1:
 		return false
-	var q := PhysicsRayQueryParameters3D.create(p + Vector3(0, 1, 0), p + Vector3(0, 1, 0) + Vector3(0.01, 0, 0))
+	var q := PhysicsRayQueryParameters3D.create(p + Vector3(0, 1, 0), p + Vector3(0, 1, 0) + Vector3(0.01, 0, 0), 1)
 	return get_world_3d().direct_space_state.intersect_ray(q).is_empty()
 
 
@@ -238,7 +238,7 @@ func _camera(delta: float) -> void:
 			cam_pitch = lerpf(cam_pitch, 0.28, 1.0 - exp(-delta * 1.0))
 	var dir := Vector3(sin(cam_yaw) * cos(cam_pitch), sin(cam_pitch), cos(cam_yaw) * cos(cam_pitch))
 	var d := reach
-	var q := PhysicsRayQueryParameters3D.create(head, head + dir * reach)
+	var q := PhysicsRayQueryParameters3D.create(head, head + dir * reach, 1)   # buildings only: not the ground, not your own car
 	q.exclude = [get_rid()]
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	if not hit.is_empty():
@@ -270,14 +270,24 @@ func _get_in() -> void:
 	if DRIVE.has(v.kind):
 		v.driver = true
 		v.parked = false
-		var n: Node3D = v.parts[0][0]
-		car_yaw = n.rotation.y
-		car_speed = v.speed if v.kind == "bike" else 0.0
-		global_position = Vector3(n.position.x, 0.0, n.position.z)
-		heading = car_yaw
+		if not v.has("body"):
+			# From here on it is a real vehicle: sprung wheels on the street.
+			var visual: Node3D = v.parts[0][0]
+			var xf := Transform3D(Basis(Vector3.UP, visual.rotation.y), Vector3(visual.position.x, _ground_y(visual.position) + 0.05, visual.position.z))
+			var moving := Vector3(-sin(visual.rotation.y), 0, -cos(visual.rotation.y)) * float(v.speed)
+			var b: VehicleBody3D = VPhys.make(v.kind, visual, xf)
+			v.node.add_child(b)
+			b.linear_velocity = moving if v.kind == "bike" else Vector3.ZERO
+			v.body = b
+			v.rig = visual
+			v.parts[0][0] = b
+		var b: VehicleBody3D = v.body
+		b.sleeping = false
+		global_position = Vector3(b.global_position.x, 0.0, b.global_position.z)
+		heading = VPhys.heading(b)
 		if v.kind == "bike":             # you, on the saddle
-			n.add_rider(null, LOOK)
-			n.set_parked(false)
+			v.rig.add_rider(null, LOOK)
+			v.rig.set_parked(false)
 	else:
 		v.rider = true
 		_ride()
@@ -290,13 +300,13 @@ func _get_out() -> void:
 	body.visible = true
 	if DRIVE.has(v.kind):
 		v.driver = false
-		v.parked = true                  # it stays where you left it
+		v.parked = true                  # it stays where you left it, handbrake on
 		v.speed = 0.0
 		car_speed = 0.0
+		VPhys.park(v.body)
 		if v.kind == "bike":
-			var rig: Node3D = v.parts[0][0]
-			rig.set_parked(true)
-			rig.rotation.z = 0.0
+			v.rig.set_parked(true)
+			v.rig.rotation.z = 0.0
 	else:
 		v.rider = false
 	# Step out on the kerb side, or the other side if that is a wall or a canal.
@@ -315,52 +325,39 @@ func _get_out() -> void:
 	vy = 0.0; grounded = true; state = "idle"; speed = 0.0
 
 
-# Arcade driving for cars and bikes: throttle, brake and reverse; steering
-# grows with speed.
+# Driving is physics: the inputs go to the engine, brakes and steering of the
+# VehicleBody3D, and you (and the camera) go where it goes.
 func _drive(dt: float) -> void:
-	var spec: Dictionary = DRIVE[vehicle.kind]
 	var key := func(k: Key, alt: Key) -> float:
 		return 1.0 if Input.is_physical_key_pressed(k) or Input.is_physical_key_pressed(alt) else 0.0
 	var throttle: float = key.call(KEY_W, KEY_UP) - key.call(KEY_S, KEY_DOWN)
 	var steer: float = key.call(KEY_A, KEY_LEFT) - key.call(KEY_D, KEY_RIGHT)
-	var brake := Input.is_physical_key_pressed(KEY_SPACE)
-	var top: float = spec.boost if Input.is_physical_key_pressed(KEY_SHIFT) else spec.top
-	if brake:
-		car_speed = move_toward(car_speed, 0.0, 14.0 * dt)
-	elif throttle > 0.0:
-		car_speed = move_toward(car_speed, top, (spec.acc if car_speed >= 0.0 else 14.0) * dt)
-	elif throttle < 0.0:
-		car_speed = move_toward(car_speed, -spec.rev, (12.0 if car_speed > 0.0 else 4.0) * dt)
-	else:
-		car_speed = move_toward(car_speed, 0.0, (1.2 if vehicle.kind == "bike" else 2.5) * dt)
-	car_yaw += steer * clampf(car_speed / spec.full, -1.0, 1.0) * spec.steer * dt
-	var f := Vector2(-sin(car_yaw), -cos(car_yaw))
-	var c := Vector2(global_position.x, global_position.z)
-	var next := c + f * car_speed * dt
-	# Walls, canals and other traffic stop you (with a small bounce).
-	var nose: Vector2 = next + f * signf(car_speed) * spec.nose if absf(car_speed) > 0.01 else next
-	var from: Vector3 = Vector3(c.x, 0.7, c.y) + Vector3(f.x, 0, f.y) * signf(car_speed) * (spec.nose - 0.4)
-	var q := PhysicsRayQueryParameters3D.create(from, Vector3(nose.x, 0.7, nose.y))
-	q.exclude = [get_rid()]
-	var hit := not get_world_3d().direct_space_state.intersect_ray(q).is_empty()
-	if hit or streamer.water_at(Vector3(nose.x, 0, nose.y)) == 1 or traffic.blocked(nose, vehicle):
-		car_speed = -car_speed * 0.25
-		next = c
-	var y: float = BRIDGE_Y + 0.09 if streamer.water_at(Vector3(next.x, 0, next.y)) == 2 else 0.09
-	var n: Node3D = vehicle.parts[0][0]
-	n.position = Vector3(next.x, y, next.y)
-	n.rotation.y = car_yaw
-	vehicle.pos = next + f * spec.half  # the front, for the traffic behind you
+	var b: VehicleBody3D = vehicle.body
+	var spec: Dictionary = DRIVE[vehicle.kind]
+	var p := b.global_position
+	var sunk := p.y < WATER_Y + 0.2       # it went into a canal: no more driving
+	car_speed = VPhys.drive(b, vehicle.kind, 0.0 if sunk else throttle, steer, Input.is_physical_key_pressed(KEY_SPACE),
+		Input.is_physical_key_pressed(KEY_SHIFT), dt)
+	b.linear_damp = 2.5 if sunk else 0.0
+	heading = VPhys.heading(b)
+	var f := Vector2(-sin(heading), -cos(heading))
+	vehicle.pos = Vector2(p.x, p.z) + f * spec.box.z * 0.5   # the front, for the traffic behind you
 	vehicle.speed = absf(car_speed)
-	global_position = Vector3(next.x, y - 0.09, next.y)
-	heading = car_yaw
+	global_position = Vector3(p.x, p.y, p.z)
 	speed = absf(car_speed)
-	if vehicle.kind == "canta":
-		Models.spin_wheels(n, car_speed * dt, 0.22)
 	if vehicle.kind == "bike":
-		n.pedal(dt, car_speed)
-		var lean := clampf(-steer * absf(car_speed) * 0.05, -0.3, 0.3)
-		n.rotation.z = lerpf(n.rotation.z, lean, 1.0 - exp(-dt * 6.0))
+		var rig: Node3D = vehicle.rig
+		rig.pedal(dt, car_speed)
+		# The lean that balances the turn: tan(lean) = v * yaw rate / g.
+		var lean := clampf(atan(car_speed * b.angular_velocity.y / 9.81), -0.6, 0.6)
+		rig.rotation.z = lerpf(rig.rotation.z, lean, 1.0 - exp(-dt * 8.0))
+
+
+# The height of what vehicles drive on (street, bridge deck) under p.
+func _ground_y(p: Vector3) -> float:
+	var q := PhysicsRayQueryParameters3D.create(Vector3(p.x, 6.0, p.z), Vector3(p.x, -4.0, p.z), VPhys.GROUND_LAYER)
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	return hit.position.y if not hit.is_empty() else 0.09
 
 
 # As a passenger: sit in the middle of the bus or tram as it drives its route.

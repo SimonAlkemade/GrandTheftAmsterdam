@@ -239,6 +239,21 @@ func _street_bikes(bl: Array, water: Array, seed: int, neighbours: Array = []) -
 	return [at, yaw]
 
 
+# What vehicles drive on and into: the street level (at road height), bridge
+# decks and railings, the quay walls and the canal beds.
+func _ground_faces(sunk: bool) -> PackedVector3Array:
+	var out := PackedVector3Array()
+	if not sunk:
+		return out
+	for name in ["ground", "bridge", "bridge_side", "quay_wall", "water"]:
+		if not surf.has(name):
+			continue
+		var lift: float = {"ground": 0.09, "water": QUAY_FOOT - WATER_Y}.get(name, 0.0)   # the bed lies at the quays' foot
+		for v in surf[name][0]:
+			out.append(Vector3(v.x, v.y + lift, v.z))
+	return out
+
+
 # A canal's stone quay wall along one ring of its outline, facing the water.
 # Edges along the chunk's border are only where the data was cut: no wall there.
 func _quay_wall(ring: PackedVector2Array, outer: bool, rect: Rect2) -> void:
@@ -383,4 +398,5 @@ func build_tile(data: Dictionary) -> Dictionary:
 		"labels": labels, "points": points, "places": places, "names": names, "buildings": bl.size(),
 		"street_bikes": street_bikes,
 		"water_y": (WATER_Y if data.has("ground") else 0.05),
+		"ground_faces": _ground_faces(data.has("ground")),
 	}
