@@ -94,7 +94,7 @@ func animate(dt: float, state: String, speed: float) -> void:
 			sh_l.rotation.x = -arm; sh_r.rotation.x = arm
 			el_l.rotation.x = 1.35 if run else 0.35; el_r.rotation.x = el_l.rotation.x
 			spine.rotation.y = s * (0.12 if run else 0.06)
-			_lerp(spine, 0.22 if run else 0.05, dt)
+			_lerp(spine, -0.22 if run else -0.05, dt)   # negative x leans the back forward
 			hips.position.y = 0.93 - (0.06 if run else 0.02) + absf(cos(phase)) * (0.07 if run else 0.035)
 			rotation.x = 0.0
 		"jump", "fall":

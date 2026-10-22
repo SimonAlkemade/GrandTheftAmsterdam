@@ -239,7 +239,7 @@ func build_tile(data: Dictionary) -> Dictionary:
 			var o := ribbon("", p, 1.435, 0.0)
 			if o.size():
 				ribbon("rails", o[0], 0.12, 0.16); ribbon("rails", o[1], 0.12, 0.16)
-		if layer == "road" or layer == "tram":
+		if layer == "road" or layer == "tram" or layer == "bike":
 			lanes.append({"kind": layer, "w": w, "p": p})
 		if str(rd[3]) != "":
 			names.append([p[p.size() / 2], str(rd[3])])

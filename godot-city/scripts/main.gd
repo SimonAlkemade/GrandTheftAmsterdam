@@ -441,12 +441,26 @@ func _test_run() -> void:
 var _veh_t := 0.0
 var _veh_step := 0
 var _veh_target = null
+var _rack_shot := false
 func _test_vehicle(kind: String) -> void:
 	_veh_t += get_process_delta_time()
 	var press := func(k: Key, down := true) -> void:
 		var e := InputEventKey.new(); e.physical_keycode = k; e.keycode = k; e.pressed = down
 		Input.parse_input_event(e)
-	if _veh_step == 0 and _veh_t > 1.0:
+	if _veh_step == 0 and _veh_t > 1.0 and kind == "rack":
+		var here := Vector2(walker.global_position.x, walker.global_position.z)
+		var b: Dictionary = streamer.parked_bike(here, 3000.0)
+		if b.is_empty():
+			return
+		var side := Vector2(cos(b.yaw), -sin(b.yaw))
+		var at: Vector2 = b.at + side * 1.1
+		walker.global_position = Vector3(at.x, 0.0, at.y)
+		var d: Vector2 = b.at - at
+		walker.cam_yaw = atan2(-d.x, -d.y) + 0.5
+		walker.cam_pitch = 0.25
+		print("veh: next to a parked bike %.0f m from the start" % b.at.distance_to(here))
+		_veh_step = 1; _veh_t = 0.0
+	elif _veh_step == 0 and _veh_t > 1.0:
 		var best = null
 		for v in traffic.vehicles:
 			if v.kind == kind and (best == null or v.pos.distance_to(Vector2(walker.global_position.x, walker.global_position.z)) < best.pos.distance_to(Vector2(walker.global_position.x, walker.global_position.z))):
@@ -458,23 +472,33 @@ func _test_vehicle(kind: String) -> void:
 		walker.cam_yaw = best.parts[0][0].rotation.y + PI / 2
 		print("veh: next to a %s, prompt in a moment" % kind)
 		_veh_step = 1; _veh_t = 0.0
-	elif _veh_step == 1 and _veh_t > 0.5:
-		_beside(_veh_target)             # it may have driven on meanwhile
+	elif _veh_step == 1 and _veh_t > 2.5 and kind == "rack" and not _rack_shot:
+		get_viewport().get_texture().get_image().save_png(String(args.shot).replace(".png", "-rack.png"))
+		_rack_shot = true
+	elif _veh_step == 1 and _veh_t > 0.5 and (kind != "rack" or _rack_shot):
+		if _veh_target != null:
+			_beside(_veh_target)         # it may have driven on meanwhile
 		print("veh: prompt='%s'" % walker.prompt)
 		press.call(KEY_E); press.call(KEY_E, false)
 		_veh_step = 2; _veh_t = 0.0
 	elif _veh_step == 2 and _veh_t > 0.3:
 		if walker.vehicle == null:
 			print("veh: FAILED to get in"); _veh_step = 9; return
-		if kind == "car":
+		if kind != "bus" and kind != "tram":
 			if _veh_t < 0.6: press.call(KEY_W)
+			if kind != "car" and _veh_t > 2.0 and _veh_t < 2.3: press.call(KEY_SHIFT)
 			if _veh_t > 4.0 and _veh_t < 4.3: press.call(KEY_A)
 			if _veh_t > 5.5 and _veh_t < 5.8: press.call(KEY_A, false)
+		if args.has("side"):             # look at the rider from the side, close up
+			walker.cam_yaw = walker.heading + PI / 2
+			walker.cam_pitch = 0.12
+			walker.cam_dist = 2.6
+			walker._mouse_idle = 0.0
 		if Engine.get_process_frames() % 10 == 0:
 			print("veh: in %s at %s speed=%.1f prompt='%s'" % [walker.vehicle.kind, walker.global_position.snapped(Vector3.ONE * 0.1), walker.speed, walker.prompt])
 		if _veh_t > 9.0:
 			get_viewport().get_texture().get_image().save_png(String(args.shot).replace(".png", "-in.png"))
-			press.call(KEY_W, false)
+			press.call(KEY_W, false); press.call(KEY_SHIFT, false)
 			press.call(KEY_E); press.call(KEY_E, false)
 			_veh_step = 3; _veh_t = 0.0
 	elif _veh_step == 3 and _veh_t > 0.5:

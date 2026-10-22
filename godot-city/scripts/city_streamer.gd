@@ -10,6 +10,8 @@ const TileBuilder := preload("res://scripts/tile_builder.gd")
 const BUILDING_MATS := ["facade_", "ground_home_", "ground_shop_", "trim_", "office", "boat", "roof_"]
 const STREET_MATS := ["road", "bike", "walk", "tram", "rail", "rails", "bridge"]
 const MINI_CELL := 64.0
+const BIKE_CELL := 100.0     # parked bikes are drawn per block of this size...
+const BIKE_SEEN := 140.0     # ...and only this close to the camera
 const JS_FETCH := """
 window.amsFetch = function (path, id, binary) {
   fetch(path).then(function (r) {
@@ -113,6 +115,24 @@ func _overview() -> void:
 	add_child(mi)
 
 
+# The Blender bike (blender/make_bikes.py), low detail, with its paint taking
+# each instance's colour so a rack of one mesh shows bikes of many colours.
+func _parked_bike_mesh() -> Mesh:
+	var sc: Node = load("res://models/bike_oma_parked.glb").instantiate()
+	var mi: MeshInstance3D = sc.find_children("*", "MeshInstance3D", true, false)[0]
+	var mesh: ArrayMesh = mi.mesh.duplicate()
+	sc.free()
+	for i in mesh.get_surface_count():
+		var m := mesh.surface_get_material(i)
+		if m and m.resource_name.begins_with("paint"):
+			var p := StandardMaterial3D.new()
+			p.vertex_color_use_as_albedo = true
+			p.metallic = 0.3
+			p.roughness = 0.35
+			mesh.surface_set_material(i, p)
+	return mesh
+
+
 # Shared meshes for instanced things: built once, used by every tile.
 func _make_kit() -> void:
 	var cyl := func(top: float, bottom: float, h: float, segs := 6) -> CylinderMesh:
@@ -124,13 +144,12 @@ func _make_kit() -> void:
 	var leaves := StandardMaterial3D.new(); leaves.vertex_color_use_as_albedo = true; leaves.roughness = 0.9
 	var crown := SphereMesh.new(); crown.radius = 4.2; crown.height = 9.6; crown.radial_segments = 8; crown.rings = 5
 	var bench := BoxMesh.new(); bench.size = Vector3(1.8, 0.5, 0.5)
-	var bike := BoxMesh.new(); bike.size = Vector3(1.7, 0.9, 0.08)
-	var bikes := StandardMaterial3D.new(); bikes.vertex_color_use_as_albedo = true
+	var bike := _parked_bike_mesh()
 	_kit = {
 		"trees": [[cyl.call(0.22, 0.32, 5.0), mat.call("4b3a2c"), 2.5, false], [crown, leaves, 8.0, true]],
 		"lamps": [[cyl.call(0.07, 0.11, 4.5), mat.call("1f3a2c", 0.6), 2.25, false], [cyl.call(0.22, 0.12, 0.42), mats.get_mat("lamp_glass"), 4.72, false]],
 		"benches": [[bench, mat.call("5a3f2a"), 0.45, false]],
-		"bikes": [[bike, bikes, 0.45, true]],
+		"bikes": [[bike, null, 0.0, true]],
 		"bins": [[cyl.call(0.28, 0.28, 0.95, 8), mat.call("1f3a2c", 0.6), 0.48, false]],
 		"signals": [[cyl.call(0.06, 0.06, 3.2), mat.call("1b1d1f", 0.6), 1.6, false]],
 		"bollards": [[cyl.call(0.1, 0.12, 0.85, 8), mat.call("6b2a1d"), 0.43, false]],
@@ -292,13 +311,17 @@ func _instance_buffers(points: Dictionary) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	for kind in points:
 		var p: PackedVector2Array = points[kind]
-		if kind == "bikes":                  # three parked bikes per rack
+		rng.seed = p.size() * 31 + kind.length()
+		var yaws := PackedFloat32Array()
+		if kind == "bikes":                  # three parked bikes side by side per rack
 			var q := PackedVector2Array()
 			for v in p:
-				for k in [-0.7, 0.0, 0.7]:
-					q.append(v + Vector2(k, 0))
+				var rack := rng.randf() * TAU
+				var side := Vector2(cos(rack), -sin(rack))
+				for k in [-0.65, 0.0, 0.65]:
+					q.append(v + side * k)
+					yaws.append(rack + rng.randf_range(-0.08, 0.08))
 			p = q
-		rng.seed = p.size() * 31 + kind.length()
 		var buf := PackedFloat32Array()
 		buf.resize(p.size() * 16)
 		for i in p.size():
@@ -307,7 +330,7 @@ func _instance_buffers(points: Dictionary) -> Dictionary:
 			if kind == "trees":
 				s = 0.75 + rng.randf() * 0.55
 			if kind == "bikes":
-				yaw = 0.0
+				yaw = yaws[i]
 			var bas := Basis(Vector3.UP, yaw).scaled(Vector3(s, s, s))
 			var o := i * 16
 			buf[o] = bas.x.x; buf[o + 1] = bas.y.x; buf[o + 2] = bas.z.x; buf[o + 3] = p[i].x
@@ -315,7 +338,7 @@ func _instance_buffers(points: Dictionary) -> Dictionary:
 			buf[o + 8] = bas.x.z; buf[o + 9] = bas.y.z; buf[o + 10] = bas.z.z; buf[o + 11] = p[i].y
 			var c := Color.from_hsv(0.24 + rng.randf() * 0.06, 0.45 + rng.randf() * 0.15, 0.32 + rng.randf() * 0.12)
 			if kind == "bikes":
-				c = [Color("1b1b1b"), Color("2c4a6e"), Color("7a1e1e"), Color("2f5d3a"), Color("d9d4c7")][i % 5]
+				c = Color(["111214", "111214", "111214", "1d2a3a", "6b1e1e", "2f4f3a", "d8d2c4"][rng.randi() % 7])
 			buf[o + 12] = c.r; buf[o + 13] = c.g; buf[o + 14] = c.b; buf[o + 15] = 1.0
 		out[kind] = [p.size(), buf]
 	return out
@@ -369,9 +392,13 @@ func _integrate(r: Dictionary) -> void:
 		body.add_child(cs)
 		root.add_child(body)
 	# Trees and street furniture, instanced.
+	r.bike_mm = []
 	for kind in r.instances:
 		var n: int = r.instances[kind][0]
 		if n == 0 or not _kit.has(kind):
+			continue
+		if kind == "bikes":
+			_parked_bikes(r, groups["furniture"])
 			continue
 		for part in _kit[kind]:
 			var mm := MultiMesh.new()
@@ -441,6 +468,74 @@ func water_at(p: Vector3) -> int:
 			if not in_hole:
 				return 1
 	return 0
+
+
+# Parked bikes are many and detailed: one MultiMesh per block, each drawn only
+# when the camera is near it, and none of them casting shadows.
+func _parked_bikes(r: Dictionary, parent: Node3D) -> void:
+	var n: int = r.instances.bikes[0]
+	var buf: PackedFloat32Array = r.instances.bikes[1]
+	var cells := {}
+	for i in n:
+		var k := Vector2i(floori(buf[i * 16 + 3] / BIKE_CELL), floori(buf[i * 16 + 11] / BIKE_CELL))
+		if not cells.has(k):
+			cells[k] = PackedFloat32Array()
+		cells[k].append_array(buf.slice(i * 16, i * 16 + 16))
+	for k in cells:
+		var cb: PackedFloat32Array = cells[k]
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_colors = true
+		mm.mesh = _kit.bikes[0][0]
+		mm.instance_count = cb.size() / 16
+		mm.buffer = cb
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mmi.visibility_range_end = BIKE_SEEN
+		mmi.visibility_range_end_margin = 15.0
+		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+		parent.add_child(mmi)
+		r.bike_mm.append(mm)
+
+
+## The parked bike nearest p within `within` metres: {tile, mm, i, at, yaw, color}, or {}.
+func parked_bike(p: Vector2, within: float) -> Dictionary:
+	var best := {}
+	var bd := within
+	for key in tiles:
+		var t: Dictionary = tiles[key]
+		if t.state != "ready" or not t.result.has("bike_mm"):
+			continue
+		var r: Dictionary = t.result
+		if not (r.rect as Rect2).grow(within).has_point(p):
+			continue
+		var taken: Dictionary = r.get("taken", {})
+		for m in r.bike_mm.size():
+			var mm: MultiMesh = r.bike_mm[m]
+			if not mm.get_aabb().grow(within + 2.0).has_point(Vector3(p.x, 0.5, p.y)):
+				continue
+			for i in mm.instance_count:
+				if taken.has(Vector2i(m, i)):
+					continue
+				var xf := mm.get_instance_transform(i)
+				var d := Vector2(xf.origin.x, xf.origin.z).distance_to(p)
+				if d < bd:
+					bd = d
+					best = {"tile": key, "mm": m, "i": i, "at": Vector2(xf.origin.x, xf.origin.z), "yaw": xf.basis.get_euler().y,
+						"color": mm.get_instance_color(i)}
+	return best
+
+
+## Take a parked bike off its rack (it stops being drawn there).
+func take_bike(b: Dictionary) -> void:
+	var r: Dictionary = tiles[b.tile].result
+	var mm: MultiMesh = r.bike_mm[b.mm]
+	var xf := mm.get_instance_transform(b.i)
+	mm.set_instance_transform(b.i, Transform3D(Basis().scaled(Vector3.ZERO), xf.origin))
+	if not r.has("taken"):
+		r.taken = {}
+	r.taken[Vector2i(b.mm, b.i)] = true
 
 
 func nearest_name(p: Vector3, within := 35.0) -> String:

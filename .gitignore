@@ -16,3 +16,4 @@ data_city_fetch.log
 godot-city/data/
 godot-city/.godot/
 shots-godot/*.log
+web-build/

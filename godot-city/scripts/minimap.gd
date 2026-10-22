@@ -10,7 +10,8 @@ const COLORS := {
 	"water": Color("3a78b0"), "green": Color("3f7a4a"), "walk": Color("4b5057"),
 	"road": Color("c9ccd1"), "tram": Color("8e6b4a"), "roof": Color("858a93"),
 }
-const VEHICLE := {"car": Color("e8e8e8"), "bus": Color("4f8dff"), "tram": Color("ff5a4f")}
+const VEHICLE := {"car": Color("e8e8e8"), "bus": Color("4f8dff"), "tram": Color("ff5a4f"), "bike": Color("ffd166")}
+const DOT := {"car": 4.5, "bus": 7.0, "tram": 7.0, "bike": 2.6}
 
 var streamer
 var traffic
@@ -70,7 +71,7 @@ func _draw_map() -> void:
 		RenderingServer.canvas_item_add_triangle_array(ci, PackedInt32Array(), t[1], PackedColorArray([COLORS[t[0]]]))
 	for v in traffic.vehicles:
 		if v.pos.distance_to(p) < VIEW + 10.0:
-			_map.draw_circle(v.pos, 4.5 if v.kind == "car" else 7.0, VEHICLE[v.kind])
+			_map.draw_circle(v.pos, DOT[v.kind], VEHICLE[v.kind])
 	_map.draw_set_transform_matrix(Transform2D())
 
 

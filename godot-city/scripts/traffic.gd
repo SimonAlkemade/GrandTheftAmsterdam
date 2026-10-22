@@ -11,16 +11,20 @@ extends Node3D
 ## beyond it.
 
 const Models := preload("res://scripts/vehicle_models.gd")
+const BikeRig := preload("res://scripts/bike_rig.gd")
 const SNAP := 2.0                 # half-metre grid for joining edge ends
 const KINDS := {
-	"car": {"len": 4.2, "max": 12.5, "lane": 1.6, "y": 0.09, "accel": 3.0},
+	"car": {"len": 4.2, "max": 12.5, "lane": 1.4, "y": 0.09, "accel": 3.0},
+	"bike": {"len": 1.8, "max": 5.2, "lane": 2.8, "y": 0.09, "accel": 1.2},
 	"bus": {"len": 12.0, "max": 11.0, "lane": 1.9, "y": 0.09, "accel": 1.5},
 	"tram": {"len": 29.8, "max": 11.5, "lane": 0.0, "y": 0.13, "accel": 1.1},
 }
 const TRAM_SECTIONS := [9.6, 9.6, 9.6]
 const CAR_COLORS := ["1b1b1b", "f2f2f2", "8a8f94", "2c4a6e", "7a1e1e", "2f5d3a", "c9b48a", "d9d4c7", "0f2a4a", "b3261e", "4a4f55", "e8e8e8"]
 
-var target := {"car": 70, "bus": 7, "tram": 9}
+var target := {"car": 70, "bus": 7, "tram": 9, "bike": 35}
+# Most Amsterdam bikes are black; the rest in the usual colours.
+const BIKE_COLORS := ["111214", "111214", "111214", "111214", "1d2a3a", "6b1e1e", "2f4f3a", "d8d2c4", "7a8a99"]
 var spawn_radius := 420.0
 var focus := Vector3.ZERO
 var player := Vector3(1e9, 0, 1e9)  # the walker, as an obstacle
@@ -28,7 +32,7 @@ var enabled := true
 
 var edges := {}        # id -> edge
 var nodes := {}        # Vector2i -> Array[[edge id, end]]
-var by_kind := {"road": [], "tram": []}
+var by_kind := {"road": [], "tram": [], "bike": []}
 var vehicles: Array = []
 var _next_id := 0
 var _rng := RandomNumberGenerator.new()
@@ -97,11 +101,16 @@ func _front(v: Dictionary) -> Array:
 	var r := _at(e, v.s if v.dir == 1 else e.len - v.s)
 	var fwd: Vector2 = r[1] * v.dir
 	var right := Vector2(-fwd.y, fwd.x)
-	return [r[0] + right * KINDS[v.kind].lane, fwd]
+	var lane: float = KINDS[v.kind].lane
+	if v.kind == "bike":                  # the middle of a bike path, the edge of a street
+		lane = 0.5 if e.kind == "bike" else minf(lane, e.w / 2.0 - 0.6)
+	return [r[0] + right * lane, fwd]
 
 
 func _usable(kind: String, e: Dictionary) -> bool:
 	if kind == "tram": return e.kind == "tram"
+	if kind == "bike": return e.kind == "bike" or (e.kind == "road" and e.w < 12.0)
+	if e.kind == "bike": return false
 	if e.kind != "road": return false
 	return kind != "bus" or e.w >= 7.0
 
@@ -110,6 +119,8 @@ func _usable(kind: String, e: Dictionary) -> bool:
 
 func _spawn(kind: String) -> void:
 	var pool: Array = by_kind["tram" if kind == "tram" else "road"]
+	if kind == "bike":
+		pool = by_kind["bike"] + by_kind["road"]
 	if pool.is_empty():
 		return
 	var spec: Dictionary = KINDS[kind]
@@ -154,6 +165,11 @@ func _build_model(v: Dictionary) -> void:
 		"bus":
 			var b: Node3D = Models.bus()
 			root.add_child(b); v.parts.append([b, 0.0, 12.0])
+		"bike":
+			var rig: Node3D = BikeRig.new()
+			rig.build("oma" if _rng.randf() < 0.55 else "opa", Color(BIKE_COLORS[_rng.randi() % BIKE_COLORS.size()]), "_low")
+			rig.add_rider(_rng)
+			root.add_child(rig); v.parts.append([rig, 0.0, 1.8])
 		"tram":
 			var off := 0.0
 			for k in TRAM_SECTIONS.size():
@@ -211,7 +227,7 @@ func _process(delta: float) -> void:
 	if not enabled:
 		return
 	delta = minf(delta, 0.1)
-	var counts := {"car": 0, "bus": 0, "tram": 0}
+	var counts := {"car": 0, "bus": 0, "tram": 0, "bike": 0}
 	for v in vehicles.duplicate():
 		if v.pos.distance_to(Vector2(focus.x, focus.z)) > spawn_radius + 160.0 and not _occupied(v):
 			_despawn(v)
@@ -241,6 +257,7 @@ func _drive(v: Dictionary, dt: float) -> void:
 	if v.ghost <= 0.0:
 		for o in vehicles:
 			if o == v: continue
+			if (o.kind == "bike") != (v.kind == "bike"): continue   # bikes keep to their own edge of the street
 			var d: Vector2 = o.pos - v.pos
 			var along := d.dot(fwd)
 			if along <= 0.0 or along > 40.0: continue
@@ -297,6 +314,8 @@ func _drive(v: Dictionary, dt: float) -> void:
 		var dir: Vector2 = (a - b).normalized() if a.distance_to(b) > 0.01 else fwd
 		part[0].position = Vector3(mid.x, spec.y, mid.y)
 		part[0].rotation.y = atan2(-dir.x, -dir.y)
+	if v.kind == "bike":
+		v.parts[0][0].pedal(dt, v.speed)
 
 
 # The point `back` metres behind the front along the trail.
@@ -314,6 +333,24 @@ func _behind(trail: Array, front: Vector2, back: float) -> Vector2:
 
 
 # ---- the player and vehicles ------------------------------------------------------
+
+const RADIUS := {"car": 1.3, "bus": 1.5, "tram": 1.5, "bike": 0.5}   # half widths, roughly
+
+
+## A bike you took from a rack, as a traffic vehicle you drive.
+func add_bike(at: Vector2, yaw: float, color: Color, kind := "oma") -> Dictionary:
+	var rig: Node3D = BikeRig.new()
+	rig.build(kind, color)
+	var root := Node3D.new()
+	root.add_child(rig)
+	add_child(root)
+	rig.position = Vector3(at.x, KINDS.bike.y, at.y)
+	rig.rotation.y = yaw
+	var v := {"kind": "bike", "edge": -1, "dir": 1, "s": 0.0, "speed": 0.0, "stuck": 0.0, "ghost": 0.0,
+		"stop_in": 0.0, "dwell": 0.0, "trail": [], "pos": at, "parts": [[rig, 0.0, 1.8]], "node": root}
+	vehicles.append(v)
+	return v
+
 
 func _occupied(v: Dictionary) -> bool:
 	return v.get("driver", false) or v.get("rider", false)
@@ -339,7 +376,7 @@ func nearest(p: Vector2, within: float) -> Dictionary:
 	for v in vehicles:
 		if v.pos.distance_to(p) > 40.0:
 			continue
-		var d := body_distance(v, p) - (1.3 if v.kind == "car" else 1.5)
+		var d: float = body_distance(v, p) - RADIUS[v.kind]
 		if d < bd:
 			bd = d; best = v
 	return best
@@ -350,13 +387,13 @@ func blocked(p: Vector2, except: Dictionary) -> bool:
 	for v in vehicles:
 		if v == except or v.pos.distance_to(p) > 40.0:
 			continue
-		if body_distance(v, p) < (1.1 if v.kind == "car" else 1.4):
+		if body_distance(v, p) < RADIUS[v.kind] - 0.2:
 			return true
 	return false
 
 
 func count() -> Dictionary:
-	var c := {"car": 0, "bus": 0, "tram": 0}
+	var c := {"car": 0, "bus": 0, "tram": 0, "bike": 0}
 	for v in vehicles: c[v.kind] += 1
 	return c
 

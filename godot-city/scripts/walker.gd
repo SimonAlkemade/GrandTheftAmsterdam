@@ -4,6 +4,7 @@ extends CharacterBody3D
 ## canals have no floor, so you fall in and swim, and climb out at a quay.
 ## Pedestrians walk the streets around you.
 ## E next to a car takes the wheel (WASD or arrows drive, Space brakes); E
+## next to a bike (parked, or a cyclist's) rides it, Shift to pedal hard; E
 ## next to a bus or tram rides it along its route; E again gets you out.
 
 const Human := preload("res://scripts/human.gd")
@@ -11,9 +12,15 @@ const SWIM_Y := -1.2
 const BRIDGE_Y := 0.3
 const ENTER_RANGE := 3.0
 # Per vehicle: camera height above the road, camera distance, half width.
-const VEHICLE_CAM := {"car": [1.7, 7.5, 0.9], "bus": [3.2, 15.0, 1.3], "tram": [3.4, 19.0, 1.2]}
-const CAR_TOP := 17.0          # m/s, about 60 km/h
-const CAR_REVERSE := 5.0
+const VEHICLE_CAM := {"car": [1.7, 7.5, 0.9], "bus": [3.2, 15.0, 1.3], "tram": [3.4, 19.0, 1.2], "bike": [1.5, 4.8, 0.4]}
+# What you can drive: top speed (and with Shift), reverse, acceleration,
+# steering, how far the nose reaches, the half length, and the speed at
+# which steering is at full strength.
+const DRIVE := {
+	"car": {"top": 17.0, "boost": 17.0, "rev": 5.0, "acc": 7.0, "steer": 1.5, "nose": 2.2, "half": 2.1, "full": 5.0},
+	"bike": {"top": 5.5, "boost": 8.5, "rev": 1.0, "acc": 2.2, "steer": 2.4, "nose": 1.0, "half": 0.9, "full": 2.0},
+}
+const LOOK := [Color("f2efe8"), Color("1d1f24"), Color("d9a07a"), Color("2b1d14"), Color("f5f5f5"), Color("3d5a80")]
 
 var streamer
 var cam: Camera3D
@@ -35,6 +42,7 @@ var prompt := ""               # what E does right now, for the HUD
 var car_yaw := 0.0
 var car_speed := 0.0
 var _mouse_idle := 10.0
+var _rack_bike := {}
 var _rng := RandomNumberGenerator.new()
 
 
@@ -45,7 +53,7 @@ func setup(s, camera: Camera3D) -> void:
 	var cs := CollisionShape3D.new(); cs.shape = shape; cs.position.y = 0.9
 	add_child(cs)
 	body = Human.new()
-	body.build(Color("f2efe8"), Color("1d1f24"), Color("d9a07a"), Color("2b1d14"), Color("f5f5f5"), Color("3d5a80"))
+	body.callv("build", LOOK.duplicate())   # callv garbles a read-only (const) array
 	add_child(body)
 	visible = false
 
@@ -122,7 +130,7 @@ func _physics_process(delta: float) -> void:
 		return
 	_mouse_idle += delta
 	if vehicle != null:
-		if vehicle.kind == "car":
+		if vehicle.kind == "car" or vehicle.kind == "bike":
 			_drive(delta)
 		else:
 			_ride()
@@ -130,8 +138,13 @@ func _physics_process(delta: float) -> void:
 		_peds(delta)
 		_camera(delta)
 		return
-	var near: Dictionary = traffic.nearest(Vector2(global_position.x, global_position.z), ENTER_RANGE) if traffic else {}
-	prompt = "" if near.is_empty() else {"car": "E  drive this car", "bus": "E  ride the bus", "tram": "E  ride the tram"}[near.kind]
+	var here := Vector2(global_position.x, global_position.z)
+	var near: Dictionary = traffic.nearest(here, ENTER_RANGE) if traffic else {}
+	prompt = "" if near.is_empty() else {"car": "E  drive this car", "bus": "E  ride the bus", "tram": "E  ride the tram", "bike": "E  ride this bike"}[near.kind]
+	if prompt == "" and Engine.get_physics_frames() % 6 == 0:
+		_rack_bike = streamer.parked_bike(here, 1.6)
+	if prompt == "" and not _rack_bike.is_empty() and _rack_bike.at.distance_to(here) < 1.8:
+		prompt = "E  take this bike"
 	var key := func(k: Key, alt: Key) -> float:
 		return 1.0 if Input.is_physical_key_pressed(k) or Input.is_physical_key_pressed(alt) else 0.0
 	var ix: float = key.call(KEY_D, KEY_RIGHT) - key.call(KEY_A, KEY_LEFT)
@@ -200,7 +213,7 @@ func _camera(delta: float) -> void:
 		head = Vector3(global_position.x, global_position.y + vc[0], global_position.z)
 		reach = vc[1] * cam_dist / 5.5
 		# Swing in behind the vehicle while it moves and you leave the mouse alone.
-		var moving: bool = absf(car_speed) > 2.0 if vehicle.kind == "car" else vehicle.speed > 1.0
+		var moving: bool = absf(car_speed) > 2.0 if vehicle.has("driver") and vehicle.driver else vehicle.speed > 1.0
 		if moving and _mouse_idle > 1.5:
 			cam_yaw = lerp_angle(cam_yaw, heading, 1.0 - exp(-delta * 2.0))
 			cam_pitch = lerpf(cam_pitch, 0.28, 1.0 - exp(-delta * 1.0))
@@ -222,24 +235,33 @@ func _camera(delta: float) -> void:
 # ---- vehicles ----------------------------------------------------------------------
 
 func _get_in() -> void:
-	var v: Dictionary = traffic.nearest(Vector2(global_position.x, global_position.z), ENTER_RANGE)
+	var here := Vector2(global_position.x, global_position.z)
+	var v: Dictionary = traffic.nearest(here, ENTER_RANGE)
 	if v.is_empty():
-		return
+		var b: Dictionary = streamer.parked_bike(here, 1.8)
+		if b.is_empty():
+			return
+		streamer.take_bike(b)
+		v = traffic.add_bike(b.at, b.yaw, b.color)
+		_rack_bike = {}
 	vehicle = v
 	body.visible = false
 	speed = 0.0
 	state = "idle"
-	if v.kind == "car":
+	if v.kind == "car" or v.kind == "bike":
 		v.driver = true
 		v.parked = false
 		var n: Node3D = v.parts[0][0]
 		car_yaw = n.rotation.y
-		car_speed = 0.0
+		car_speed = v.speed if v.kind == "bike" else 0.0
 		global_position = Vector3(n.position.x, 0.0, n.position.z)
+		heading = car_yaw
+		if v.kind == "bike":             # you, on the saddle
+			n.add_rider(null, LOOK)
+			n.set_parked(false)
 	else:
 		v.rider = true
 		_ride()
-	heading = car_yaw if v.kind == "car" else heading
 	_mouse_idle = 10.0
 
 
@@ -247,10 +269,15 @@ func _get_out() -> void:
 	var v: Dictionary = vehicle
 	vehicle = null
 	body.visible = true
-	if v.kind == "car":
+	if v.kind == "car" or v.kind == "bike":
 		v.driver = false
 		v.parked = true                  # it stays where you left it
+		v.speed = 0.0
 		car_speed = 0.0
+		if v.kind == "bike":
+			var rig: Node3D = v.parts[0][0]
+			rig.set_parked(true)
+			rig.rotation.z = 0.0
 	else:
 		v.rider = false
 	# Step out on the kerb side, or the other side if that is a wall or a canal.
@@ -269,28 +296,31 @@ func _get_out() -> void:
 	vy = 0.0; grounded = true; state = "idle"; speed = 0.0
 
 
-# Arcade driving: throttle, brake and reverse; steering grows with speed.
+# Arcade driving for cars and bikes: throttle, brake and reverse; steering
+# grows with speed.
 func _drive(dt: float) -> void:
+	var spec: Dictionary = DRIVE[vehicle.kind]
 	var key := func(k: Key, alt: Key) -> float:
 		return 1.0 if Input.is_physical_key_pressed(k) or Input.is_physical_key_pressed(alt) else 0.0
 	var throttle: float = key.call(KEY_W, KEY_UP) - key.call(KEY_S, KEY_DOWN)
 	var steer: float = key.call(KEY_A, KEY_LEFT) - key.call(KEY_D, KEY_RIGHT)
 	var brake := Input.is_physical_key_pressed(KEY_SPACE)
+	var top: float = spec.boost if Input.is_physical_key_pressed(KEY_SHIFT) else spec.top
 	if brake:
 		car_speed = move_toward(car_speed, 0.0, 14.0 * dt)
 	elif throttle > 0.0:
-		car_speed = move_toward(car_speed, CAR_TOP, (7.0 if car_speed >= 0.0 else 14.0) * dt)
+		car_speed = move_toward(car_speed, top, (spec.acc if car_speed >= 0.0 else 14.0) * dt)
 	elif throttle < 0.0:
-		car_speed = move_toward(car_speed, -CAR_REVERSE, (12.0 if car_speed > 0.0 else 4.0) * dt)
+		car_speed = move_toward(car_speed, -spec.rev, (12.0 if car_speed > 0.0 else 4.0) * dt)
 	else:
-		car_speed = move_toward(car_speed, 0.0, 2.5 * dt)
-	car_yaw += steer * clampf(car_speed / 5.0, -1.0, 1.0) * 1.5 * dt
+		car_speed = move_toward(car_speed, 0.0, (2.5 if vehicle.kind == "car" else 1.2) * dt)
+	car_yaw += steer * clampf(car_speed / spec.full, -1.0, 1.0) * spec.steer * dt
 	var f := Vector2(-sin(car_yaw), -cos(car_yaw))
 	var c := Vector2(global_position.x, global_position.z)
 	var next := c + f * car_speed * dt
 	# Walls, canals and other traffic stop you (with a small bounce).
-	var nose := next + f * signf(car_speed) * 2.2 if absf(car_speed) > 0.01 else next
-	var from := Vector3(c.x, 0.7, c.y) + Vector3(f.x, 0, f.y) * signf(car_speed) * 1.8
+	var nose: Vector2 = next + f * signf(car_speed) * spec.nose if absf(car_speed) > 0.01 else next
+	var from: Vector3 = Vector3(c.x, 0.7, c.y) + Vector3(f.x, 0, f.y) * signf(car_speed) * (spec.nose - 0.4)
 	var q := PhysicsRayQueryParameters3D.create(from, Vector3(nose.x, 0.7, nose.y))
 	q.exclude = [get_rid()]
 	var hit := not get_world_3d().direct_space_state.intersect_ray(q).is_empty()
@@ -301,11 +331,15 @@ func _drive(dt: float) -> void:
 	var n: Node3D = vehicle.parts[0][0]
 	n.position = Vector3(next.x, y, next.y)
 	n.rotation.y = car_yaw
-	vehicle.pos = next + f * 2.1        # the front, for the traffic behind you
+	vehicle.pos = next + f * spec.half  # the front, for the traffic behind you
 	vehicle.speed = absf(car_speed)
 	global_position = Vector3(next.x, y - 0.09, next.y)
 	heading = car_yaw
 	speed = absf(car_speed)
+	if vehicle.kind == "bike":
+		n.pedal(dt, car_speed)
+		var lean := clampf(-steer * absf(car_speed) * 0.05, -0.3, 0.3)
+		n.rotation.z = lerpf(n.rotation.z, lean, 1.0 - exp(-dt * 6.0))
 
 
 # As a passenger: sit in the middle of the bus or tram as it drives its route.
