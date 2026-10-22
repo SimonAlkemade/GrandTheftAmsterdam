@@ -38,7 +38,7 @@ canal and you swim; swim to a quay to climb out.
 ## Traffic
 
 Cyclists ride the bike paths and the edges of the streets, and parked bikes
-stand at the city's bike racks. Press E next to a parked bike, or next to a
+stand at the city's bike racks and in small groups along the house fronts. Press E next to a parked bike, or next to a
 cyclist, to ride it (Shift pedals hard). Press E next to a car to take the wheel: WASD or the arrow keys drive,
 Space brakes, and walls, canals and other traffic stop you. Press E next to
 a bus or tram to ride it along its route. E again gets you out; a car you

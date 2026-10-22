@@ -244,7 +244,7 @@ func _build(key: String, text: String) -> void:
 	var r := {}
 	if typeof(data) == TYPE_DICTIONARY:
 		r = TileBuilder.new().build_tile(data)
-		r.instances = _instance_buffers(r.points)
+		r.instances = _instance_buffers(r.points, r.street_bikes)
 		r.mini = _minimap_cells(r.surfaces)
 	else:
 		r = {"key": key, "failed": true, "rect": Rect2()}
@@ -306,7 +306,7 @@ func minimap_near(p: Vector2, radius: float) -> Array:
 
 
 # MultiMesh buffers (3x4 transform + colour per instance), built off-thread.
-func _instance_buffers(points: Dictionary) -> Dictionary:
+func _instance_buffers(points: Dictionary, street_bikes: Array) -> Dictionary:
 	var out := {}
 	var rng := RandomNumberGenerator.new()
 	for kind in points:
@@ -321,6 +321,8 @@ func _instance_buffers(points: Dictionary) -> Dictionary:
 				for k in [-0.65, 0.0, 0.65]:
 					q.append(v + side * k)
 					yaws.append(rack + rng.randf_range(-0.08, 0.08))
+			q.append_array(street_bikes[0])  # and the ones along the house fronts
+			yaws.append_array(street_bikes[1])
 			p = q
 		var buf := PackedFloat32Array()
 		buf.resize(p.size() * 16)

@@ -67,6 +67,9 @@ func _ready() -> void:
 	_set_hour(hour)
 	# Start on foot on the Dam, as soon as the ground there has loaded.
 	_walk_at = start
+	if args.has("at"):                    # --at=x,y in the data's decimetres (as search.json gives them)
+		var xy: PackedStringArray = String(args.at).split(",")
+		_walk_at = Vector3(float(xy[0]) / 10.0, 0.0, -float(xy[1]) / 10.0)
 	_pending_walk = args.get("view", "walk") == "walk"
 	_hud()
 	if args.has("shot"):
@@ -397,13 +400,16 @@ func _process(delta: float) -> void:
 	traffic.enabled = traffic_on and (mode == "walk" or cam.dist < 1600.0)
 	var s: Dictionary = streamer.stats()
 	var c: Dictionary = traffic.count()
-	ui.stats.text = "%d tiles (%d loading) · %s buildings\n%d cars · %d buses · %d trams · %d fps" % [
-		s.ready, s.loading, _thousands(s.buildings), c.car, c.bus, c.tram, Engine.get_frames_per_second()]
+	ui.stats.text = "%d tiles (%d loading) · %s buildings\n%d cars · %d buses · %d trams · %d cyclists · %d fps" % [
+		s.ready, s.loading, _thousands(s.buildings), c.car, c.bus, c.tram, c.bike, Engine.get_frames_per_second()]
 	sun.global_position = focus
 	if _shot_t >= 0.0:
 		_shot_t -= delta
 		if Engine.get_process_frames() % 20 == 0:
 			print("t=%.1f %s" % [_shot_t, ui.stats.text.replace("\n", " | ")])
+		if args.has("yaw") and walker.active:
+			walker.cam_yaw = float(args.yaw)
+			walker.cam_pitch = 0.18
 		if args.has("run") and walker.active:
 			_test_run()
 		if args.has("vehicle") and walker.active:

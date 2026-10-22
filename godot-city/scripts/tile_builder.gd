@@ -17,6 +17,11 @@ const STYLES := 7
 const SHOP_STYLES := 6
 const ROOFS := 3
 const LEVEL := {"walk": 0.07, "road": 0.09, "bike": 0.11, "tram": 0.13, "rail": 0.13}
+# Bikes parked along the house fronts: a group every so many metres of wall.
+const BIKE_EVERY := Vector2(15.0, 30.0)
+const BIKE_GROUP := [1, 1, 1, 2, 2, 3]
+const BIKE_FROM_WALL := 0.45
+const BIKE_GAP := 0.65
 
 var surf := {}          # material name -> [PackedVector3Array, PackedVector3Array, PackedVector2Array]
 var walls := PackedVector3Array()
@@ -162,6 +167,72 @@ func building(bd: Dictionary, i: int, seed: int) -> void:
 		polygon(m.flat, rings, top, 6.0, bd.get("t"))
 
 
+# Spots along the outside walls of buildings where bikes stand, parallel to
+# the wall on the pavement: [positions, yaws]. A spot is dropped when it
+# would be inside another building (a party wall), in a canal, or hard
+# against something across the way.
+func _street_bikes(bl: Array, water: Array, seed: int) -> Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed + 77
+	const CELL := 25.0
+	var rings := []
+	var grid := {}
+	for i in bl.size():
+		var bd: Dictionary = bl[i]
+		var ring := pts(bd.g) if bd.has("g") else pts(bd.r[0])
+		rings.append(ring)
+		var box := Rect2(ring[0], Vector2.ZERO)
+		for q in ring: box = box.expand(q)
+		for cx in range(floori(box.position.x / CELL), floori(box.end.x / CELL) + 1):
+			for cy in range(floori(box.position.y / CELL), floori(box.end.y / CELL) + 1):
+				var k := Vector2i(cx, cy)
+				if not grid.has(k): grid[k] = []
+				grid[k].append(i)
+	var in_building := func(p: Vector2, skip: int) -> bool:
+		for j in grid.get(Vector2i(floori(p.x / CELL), floori(p.y / CELL)), []):
+			if j != skip and Geometry2D.is_point_in_polygon(p, rings[j]):
+				return true
+		return false
+	var in_water := func(p: Vector2) -> bool:
+		for w in water:
+			if Geometry2D.is_point_in_polygon(p, w[0]):
+				return true
+		return false
+	var at := PackedVector2Array()
+	var yaw := PackedFloat32Array()
+	var until := rng.randf_range(BIKE_EVERY.x, BIKE_EVERY.y)
+	for i in bl.size():
+		if bl[i].has("w"):
+			continue                          # houseboats
+		var ring: PackedVector2Array = rings[i]
+		for e in ring.size():
+			var a: Vector2 = ring[e]; var b: Vector2 = ring[(e + 1) % ring.size()]
+			var length := a.distance_to(b)
+			if length < 0.5:
+				continue
+			var dir := (b - a) / length
+			var n := Vector2(-dir.y, dir.x)
+			if Geometry2D.is_point_in_polygon((a + b) / 2.0 + n * 0.3, ring):
+				n = -n                        # make n point out of the building
+			var t := until
+			while t < length:
+				var k: int = BIKE_GROUP[rng.randi() % BIKE_GROUP.size()]
+				var span := (k - 1) * BIKE_GAP
+				if t > 1.0 and t + span < length - 1.0:
+					var base := a + dir * t + n * BIKE_FROM_WALL
+					var clear: bool = not in_building.call(base, i) and not in_building.call(base + n * 1.4, -1) \
+						and not in_water.call(base) and not in_water.call(base + n * 0.8)
+					if clear:
+						var facing := 1.0 if rng.randf() < 0.5 else -1.0
+						for m in k:
+							at.append(base + dir * (m * BIKE_GAP))
+							var d := dir * facing
+							yaw.append(atan2(-d.x, -d.y) + rng.randf_range(-0.06, 0.06))
+				t += rng.randf_range(BIKE_EVERY.x, BIKE_EVERY.y)
+			until = t - length
+	return [at, yaw]
+
+
 # ---- streets, water, green ----------------------------------------------------
 
 # A polyline as a flat ribbon with mitred joins. Returns the two edges.
@@ -254,6 +325,7 @@ func build_tile(data: Dictionary) -> Dictionary:
 	for l in data.get("waterLabels", []):
 		labels.append([str(l[0]), Vector2(float(l[1]) / 10.0, -float(l[2]) / 10.0), float(l[3])])
 		names.append([Vector2(float(l[1]) / 10.0, -float(l[2]) / 10.0), str(l[0])])
+	var street_bikes := _street_bikes(bl, water, seed)
 	var points := {}
 	for k in ["trees", "lamps", "benches", "bikes", "bins", "signals", "bollards"]:
 		points[k] = pts(data.get(k, []))
@@ -264,4 +336,5 @@ func build_tile(data: Dictionary) -> Dictionary:
 		"key": "%d_%d" % [ti, tj], "rect": Rect2(x0, z0, tile_size, tile_size),
 		"surfaces": surf, "walls": walls, "lanes": lanes, "water": water, "bridges": bridges,
 		"labels": labels, "points": points, "places": places, "names": names, "buildings": bl.size(),
+		"street_bikes": street_bikes,
 	}
