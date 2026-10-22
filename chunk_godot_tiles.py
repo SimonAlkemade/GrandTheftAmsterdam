@@ -11,7 +11,7 @@ import json
 import sys
 from pathlib import Path
 
-from amsterdam.chunks import chunk_tile
+from amsterdam.chunks import add_ground, chunk_tile
 
 
 def chunk_data(dst: Path, chunk_m: float = 375.0) -> int:
@@ -23,6 +23,10 @@ def chunk_data(dst: Path, chunk_m: float = 375.0) -> int:
         t = json.loads(f.read_text())
         if "chunks" not in t:
             t = chunk_tile(t, tile_dm, chunk_dm)
+            f.write_text(json.dumps(t, separators=(",", ":")))
+        elif any("ground" not in c for c in t["chunks"].values()):
+            for c in t["chunks"].values():   # chunked before the canals were sunk
+                add_ground(c, float(t["chunk"]) * 10)
             f.write_text(json.dumps(t, separators=(",", ":")))
         for key, c in t["chunks"].items():
             a, b = c["tile"]

@@ -18,6 +18,7 @@ import mapbox_earcut as earcut
 import numpy as np
 from shapely.geometry import LineString, MultiLineString, MultiPolygon, Polygon, box
 from shapely.geometry.base import BaseGeometry
+from shapely.ops import unary_union
 
 POINT_KEYS = ("trees", "lamps", "benches", "bikes", "bins", "signals", "bollards")
 POLY_KEYS = ("water", "green", "plazas")
@@ -156,7 +157,27 @@ def split_tile(t: dict, tile_dm: float, chunk_dm: float) -> dict:
     for br in t.get("bridges", []):
         for key, flat in clip_lines(br):
             put(key, "bridges", flat)
+    for c in out.values():
+        add_ground(c, chunk_dm)
     return out
+
+
+def add_ground(c: dict, chunk_dm: float) -> None:
+    """The chunk's street-level ground with its canals cut out (so the water
+    can lie lower), as {"r": rings, "t": triangles} pieces."""
+    a, b = c["tile"]
+    area = box(a * chunk_dm, b * chunk_dm, (a + 1) * chunk_dm, (b + 1) * chunk_dm)
+    water = [_shape(w["r"]) for w in c.get("water", [])]
+    if water:
+        area = area.difference(unary_union(water).buffer(0))
+    pieces = []
+    for p in _polys(area):
+        if p.area < 1.0:
+            continue
+        rings = _rings(p)
+        if rings:
+            pieces.append({"r": rings, "t": tris(rings)})
+    c["ground"] = pieces
 
 
 def chunk_tile(t: dict, tile_dm: float, chunk_dm: float) -> dict:

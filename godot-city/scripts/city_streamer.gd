@@ -121,7 +121,7 @@ func _overview() -> void:
 	var mi := MeshInstance3D.new()
 	mi.mesh = plane
 	mi.material_override = m
-	mi.position = Vector3((x0 + x1) / 2, -0.15, (z0 + z1) / 2)
+	mi.position = Vector3((x0 + x1) / 2, -3.0, (z0 + z1) / 2)   # below the canal water
 	add_child(mi)
 
 
@@ -491,7 +491,7 @@ func _integrate(r: Dictionary) -> void:
 		lab.pixel_size = 0.02
 		lab.modulate = Color(0.86, 0.93, 0.95, 0.85)
 		lab.outline_size = 0
-		lab.position = Vector3(l[1].x, 0.1, l[1].y)
+		lab.position = Vector3(l[1].x, float(r.get("water_y", 0.0)) + 0.05, l[1].y)   # on the water
 		var ang := deg_to_rad(-float(l[2]))
 		if absf(float(l[2])) > 90.0:
 			ang += PI

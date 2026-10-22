@@ -21,6 +21,8 @@ const LEVEL := {"walk": 0.07, "road": 0.09, "bike": 0.11, "tram": 0.13, "rail": 
 const BIKE_EVERY := Vector2(15.0, 30.0)
 const BIKE_GROUP := [1, 1, 1, 2, 2, 3]
 const BIKE_FROM_WALL := 0.45
+const WATER_Y := -1.4          # canal water lies well below the street...
+const QUAY_FOOT := -2.6        # ...between stone quay walls that go on down below it
 const BIKE_GAP := 0.65
 
 var surf := {}          # material name -> [PackedVector3Array, PackedVector3Array, PackedVector2Array]
@@ -237,6 +239,35 @@ func _street_bikes(bl: Array, water: Array, seed: int, neighbours: Array = []) -
 	return [at, yaw]
 
 
+# A canal's stone quay wall along one ring of its outline, facing the water.
+# Edges along the chunk's border are only where the data was cut: no wall there.
+func _quay_wall(ring: PackedVector2Array, outer: bool, rect: Rect2) -> void:
+	var area := 0.0
+	for i in ring.size():
+		var a: Vector2 = ring[i]; var b: Vector2 = ring[(i + 1) % ring.size()]
+		area += a.x * b.y - b.x * a.y
+	var on_edge := func(p: Vector2) -> int:
+		var m := 0
+		if absf(p.x - rect.position.x) < 0.05: m |= 1
+		if absf(p.x - rect.end.x) < 0.05: m |= 2
+		if absf(p.y - rect.position.y) < 0.05: m |= 4
+		if absf(p.y - rect.end.y) < 0.05: m |= 8
+		return m
+	var run := 0.0
+	for i in ring.size():
+		var a: Vector2 = ring[i]; var b: Vector2 = ring[(i + 1) % ring.size()]
+		var length := a.distance_to(b)
+		if length < 0.01 or (on_edge.call(a) & on_edge.call(b)) != 0:
+			continue
+		var d := (b - a) / length
+		var inward := Vector2(-d.y, d.x) if area > 0.0 else Vector2(d.y, -d.x)
+		var n2 := inward if outer else -inward   # the water is inside the outline, outside an island
+		var n := Vector3(n2.x, 0, n2.y)
+		quad("quay_wall", Vector3(a.x, QUAY_FOOT, a.y), Vector3(b.x, QUAY_FOOT, b.y), Vector3(b.x, 0.0, b.y), Vector3(a.x, 0.0, a.y), n,
+			[Vector2(run / 3.0, 0), Vector2((run + length) / 3.0, 0), Vector2((run + length) / 3.0, -QUAY_FOOT / 3.0), Vector2(run / 3.0, -QUAY_FOOT / 3.0)])
+		run += length
+
+
 # ---- streets, water, green ----------------------------------------------------
 
 # A polyline as a flat ribbon with mitred joins. Returns the two edges.
@@ -285,7 +316,13 @@ func build_tile(data: Dictionary) -> Dictionary:
 		building(bl[i], i, seed)
 	# Ground, green, squares.
 	var ground := PackedVector2Array([Vector2(x0, z0), Vector2(x0 + tile_size, z0), Vector2(x0 + tile_size, z1), Vector2(x0, z1)])
-	polygon("ground", [ground], 0.0, 3.0)
+	if data.has("ground"):                # the street level, with the canals cut out
+		for g in data.ground:
+			var rings := []
+			for r in g.r: rings.append(pts(r))
+			polygon("ground", rings, 0.0, 3.0, g.get("t"))
+	else:
+		polygon("ground", [ground], 0.0, 3.0)
 	for g in data.get("green", []):
 		var rings := []
 		for r in g.r: rings.append(pts(r))
@@ -299,7 +336,10 @@ func build_tile(data: Dictionary) -> Dictionary:
 	for w in data.get("water", []):
 		var rings := []
 		for r in w.r: rings.append(pts(r))
-		polygon("water", rings, 0.05, 20.0, w.get("t"))
+		polygon("water", rings, WATER_Y if data.has("ground") else 0.05, 20.0, w.get("t"))
+		if data.has("ground"):
+			for k in rings.size():
+				_quay_wall(rings[k], k == 0, Rect2(x0, z0, tile_size, tile_size))
 		for r in rings:
 			var closed: PackedVector2Array = r.duplicate(); closed.append(r[0])
 			ribbon("quay", closed, 0.6, 0.12, 2.0)
@@ -324,6 +364,7 @@ func build_tile(data: Dictionary) -> Dictionary:
 		var o := ribbon("bridge", p, 7.0, 0.3)
 		if o.size():
 			side("bridge_side", o[0], 0.3, 1.1); side("bridge_side", o[1], 0.3, 1.1)
+			side("quay_wall", o[0], -0.6, 0.3); side("quay_wall", o[1], -0.6, 0.3)   # the deck's edge
 		bridges.append(p)
 	var labels := []
 	for l in data.get("waterLabels", []):
@@ -341,4 +382,5 @@ func build_tile(data: Dictionary) -> Dictionary:
 		"surfaces": surf, "walls": walls, "lanes": lanes, "water": water, "bridges": bridges,
 		"labels": labels, "points": points, "places": places, "names": names, "buildings": bl.size(),
 		"street_bikes": street_bikes,
+		"water_y": (WATER_Y if data.has("ground") else 0.05),
 	}

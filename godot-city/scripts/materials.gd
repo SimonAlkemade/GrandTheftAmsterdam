@@ -72,9 +72,12 @@ func build() -> void:
 	lib["tram"] = _plain(Color("5f6266"))
 	lib["rail"] = _plain(Color("55504a"))
 	lib["rails"] = _plain(Color("2a2c2e"), 0.4, 0.6)
-	lib["water"] = _plain(Color("2b4a4f"), 0.06, 0.1)
+	lib["water"] = _plain(Color("1c3438"), 0.35, 0.0)   # dark and only a little glossy, like canal water
+	lib["water"].metallic_specular = 0.12              # it mirrors the sky far less than glass would
 	lib["quay"] = _plain(Color("cfc6b2"))
 	lib["bridge_side"] = _plain(Color("6d3b2c"))
+	lib["quay_wall"] = _textured("walk", 0.95)       # stone setts, standing on end
+	lib["quay_wall"].albedo_color = Color(0.3, 0.27, 0.24)   # old, darkened stone
 	lib["flower"] = _plain(Color("b8607a"))
 	lib["play"] = _plain(Color("c7a46a"))
 	lib["pitch"] = _plain(Color("4f8d4a"))

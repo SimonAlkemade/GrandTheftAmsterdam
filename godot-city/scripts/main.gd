@@ -75,6 +75,7 @@ func _ready() -> void:
 	if args.has("at"):                    # --at=x,y in the data's decimetres (as search.json gives them)
 		var xy: PackedStringArray = String(args.at).split(",")
 		_walk_at = Vector3(float(xy[0]) / 10.0, 0.0, -float(xy[1]) / 10.0)
+		cam.target = _walk_at
 	_pending_walk = args.get("view", "walk") == "walk"
 	_hud()
 	if args.has("shot"):
@@ -83,6 +84,7 @@ func _ready() -> void:
 		match args.get("view", "map"):
 			"map":
 				cam.dist = float(args.get("dist", "650")); cam.pitch = deg_to_rad(float(args.get("pitch", "58")))
+				cam.yaw = deg_to_rad(float(args.get("camyaw", "20")))
 			"walk":
 				pass
 			"tram":

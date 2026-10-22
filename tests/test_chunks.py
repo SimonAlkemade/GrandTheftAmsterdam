@@ -68,6 +68,15 @@ class Split(unittest.TestCase):
         self.assertAlmostEqual(sum(area(w["r"]) for w in pieces), area(t["water"][0]["r"]), delta=5)
         self.assertTrue(any("t" in w for w in pieces), "the island stays a hole somewhere")
 
+    def test_the_ground_has_the_canal_cut_out(self):
+        out = split_tile(self.synthetic(), 15000, 3750)
+        for key, c in out.items():
+            ground = sum(area(g["r"]) for g in c["ground"])
+            water = sum(area(w["r"]) for w in c.get("water", []))
+            self.assertAlmostEqual(ground + water, 3750 * 3750, delta=50, msg=key)
+            for g in c["ground"]:
+                self.assertTrue(g["t"], key)
+
     @unittest.skipUnless(TILE.exists() and "chunks" not in json.loads(TILE.read_text()), "needs an unchunked city tile")
     def test_a_real_tile_loses_nothing(self):
         t = json.loads(TILE.read_text())

@@ -9,7 +9,7 @@ extends CharacterBody3D
 
 const Human := preload("res://scripts/human.gd")
 const Models := preload("res://scripts/vehicle_models.gd")
-const SWIM_Y := -1.2
+const SWIM_Y := -2.65          # your feet while swimming: the canal is 1.4 m below the street
 const BRIDGE_Y := 0.3
 const ENTER_RANGE := 3.0
 # Per vehicle: camera height above the road, camera distance, half width.
