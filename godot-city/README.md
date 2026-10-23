@@ -19,7 +19,7 @@ macOS, Windows and Linux.
 | Space | jump |
 | Mouse (click to capture) / right-drag / two-finger swipe | look |
 | Wheel | camera distance |
-| E | get in or out of the car, bus or tram next to you |
+| E | get in or out of the car, Canta, bike, bus, tram or boat next to you |
 | M (or Tab, G) | switch to the map |
 | Esc | free the mouse |
 
@@ -34,7 +34,29 @@ macOS, Windows and Linux.
 
 The slider sets the time of day; at night the windows, street lamps,
 headlights and the tram and bus destination signs light up. Fall into a
-canal and you swim; swim to a quay to climb out.
+canal and you swim (Shift for a faster crawl); swim to a quay to climb out,
+or up to a boat and press E to climb aboard.
+
+## Boats
+
+Sloepen, the open motor launches of the canals, lie moored along the quays
+around you (`scripts/boats.gd` puts them on the loaded canal polygons, along
+the canal and close to a quay). E from the quay or the water takes the helm:
+W/S are the throttle (and astern), A/D swing the outboard, Shift opens it up.
+E again steps you onto the quay, or into the water if there is none in reach;
+the boat stays where you left it.
+
+Each boat is a RigidBody3D (`scripts/boat.gd`) held up by buoyancy: eight
+points round the bottom of the hull each lift in proportion to how deep they
+are below a gently swelling surface, and damp their own bobbing, so it finds
+its own waterline, rights itself when heeled and pitches and rolls as it
+goes. The water drags weakly along the hull and hard across it, so the boat
+glides on when you let go and its stern slides out in a turn; the thrust acts
+at the stern along the outboard's angle, so it steers best under power. It
+bumps off quay walls and fits under the bridges. `tests/boat_test.gd` checks
+the waterline, the righting, the speed, the glide and the turn on flat water:
+
+    godot --headless --path godot-city --script tests/boat_test.gd
 
 ## Mission 1: parcel courier
 
@@ -101,7 +123,9 @@ another size: `python chunk_godot_tiles.py godot-city/data 375`.
 - `scripts/vehicle_physics.gd`: suspension, engine, brakes and steering for what you drive
 - `scripts/walker.gd`, `scripts/human.gd`: the player and pedestrians
 - `scripts/bike_rig.gd`: a ridden bike: wheels, crank, and the rider's legs and arms on pedals and grips
+- `scripts/boat.gd`, `scripts/boats.gd`: the floating boats and where they are moored
 - `models/canta.glb`: the Canta, modelled by `blender/make_canta.py`
+- `models/boat.glb`: the sloep, modelled by `blender/make_boat.py`
 - `models/bike_*.glb`: the bikes, modelled in Blender by `blender/make_bikes.py`
   (`pip install bpy`, then `python blender/make_bikes.py godot-city/models`)
 - `scripts/mission.gd`: the parcel courier: circles, routing (A* over the street graph), clock and pay

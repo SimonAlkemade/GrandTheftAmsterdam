@@ -5,7 +5,8 @@ extends CharacterBody3D
 ## Pedestrians walk the streets around you.
 ## E next to a car takes the wheel (WASD or arrows drive, Space brakes); E
 ## next to a bike (parked, or a cyclist's) rides it, Shift to pedal hard; E
-## next to a bus or tram rides it along its route; E again gets you out.
+## next to a bus or tram rides it along its route; E next to a moored boat
+## (from the quay, or swimming) takes the helm; E again gets you out.
 
 const Human := preload("res://scripts/human.gd")
 const Models := preload("res://scripts/vehicle_models.gd")
@@ -15,7 +16,7 @@ const BRIDGE_Y := 0.3
 const WATER_Y := -1.4          # the canal surface (TileBuilder.WATER_Y)
 const ENTER_RANGE := 3.0
 # Per vehicle: camera height above the road, camera distance, half width.
-const VEHICLE_CAM := {"car": [1.7, 7.5, 0.9], "bus": [3.2, 15.0, 1.3], "tram": [3.4, 19.0, 1.2], "bike": [1.5, 4.8, 0.4], "canta": [1.9, 6.0, 0.6]}
+const VEHICLE_CAM := {"car": [1.7, 7.5, 0.9], "bus": [3.2, 15.0, 1.3], "tram": [3.4, 19.0, 1.2], "bike": [1.5, 4.8, 0.4], "canta": [1.9, 6.0, 0.6], "boat": [2.0, 8.5, 1.0]}
 # What you can drive (and how) is in VehiclePhysics.SPEC.
 const DRIVE := VPhys.SPEC
 const LOOK := [Color("f2efe8"), Color("1d1f24"), Color("d9a07a"), Color("2b1d14"), Color("f5f5f5"), Color("3d5a80")]
@@ -35,6 +36,7 @@ var cam_pitch := 0.3
 var cam_dist := 5.5
 var peds: Array = []
 var traffic
+var boats                      # the moored sloepen (Boats)
 var vehicle = null             # the traffic vehicle you are in, or null
 var prompt := ""               # what E does right now, for the HUD
 var car_yaw := 0.0
@@ -141,7 +143,9 @@ func _physics_process(delta: float) -> void:
 		return
 	_mouse_idle += delta
 	if vehicle != null:
-		if DRIVE.has(vehicle.kind):
+		if vehicle.kind == "boat":
+			_steer_boat(delta)
+		elif DRIVE.has(vehicle.kind):
 			_drive(delta)
 		else:
 			_ride()
@@ -152,6 +156,8 @@ func _physics_process(delta: float) -> void:
 	var here := Vector2(global_position.x, global_position.z)
 	var near: Dictionary = traffic.nearest(here, ENTER_RANGE) if traffic else {}
 	prompt = "" if near.is_empty() else {"car": "E  drive this car", "bus": "E  ride the bus", "tram": "E  ride the tram", "bike": "E  ride this bike", "canta": "E  drive this Canta"}[near.kind]
+	if prompt == "" and boats and not boats.nearest(here, ENTER_RANGE).is_empty():
+		prompt = "E  take the boat"
 	if prompt == "" and Engine.get_physics_frames() % 6 == 0:
 		_rack_bike = streamer.parked_bike(here, 1.6)
 	if prompt == "" and not _rack_bike.is_empty() and _rack_bike.at.distance_to(here) < 1.8:
@@ -163,7 +169,7 @@ func _physics_process(delta: float) -> void:
 	var inp := Vector2(ix, iz).limit_length(1.0)
 	var run := Input.is_physical_key_pressed(KEY_SHIFT)
 	var swimming := state == "swim"
-	var top := 1.5 if swimming else (6.2 if run else 1.7)
+	var top := (2.4 if run else 1.4) if swimming else (6.2 if run else 1.7)   # Shift: a fast crawl
 	var move := Vector2(inp.x * cos(cam_yaw) + inp.y * sin(cam_yaw), -inp.x * sin(cam_yaw) + inp.y * cos(cam_yaw))
 	var want := inp.length() * top
 	speed += (want - speed) * minf(1.0, delta * (6.0 if want > speed else 9.0))
@@ -256,6 +262,11 @@ func _camera(delta: float) -> void:
 func _get_in() -> void:
 	var here := Vector2(global_position.x, global_position.z)
 	var v: Dictionary = traffic.nearest(here, ENTER_RANGE)
+	if (v.is_empty() or state == "swim") and boats:
+		var bt: Dictionary = boats.nearest(here, ENTER_RANGE)
+		if not bt.is_empty():
+			_board(bt)
+			return
 	if v.is_empty():
 		var b: Dictionary = streamer.parked_bike(here, 1.8)
 		if b.is_empty():
@@ -298,6 +309,9 @@ func _get_out() -> void:
 	var v: Dictionary = vehicle
 	vehicle = null
 	body.visible = true
+	if v.kind == "boat":
+		_leave_boat(v)
+		return
 	if DRIVE.has(v.kind):
 		v.driver = false
 		v.parked = true                  # it stays where you left it, handbrake on
@@ -351,6 +365,65 @@ func _drive(dt: float) -> void:
 		# The lean that balances the turn: tan(lean) = v * yaw rate / g.
 		var lean := clampf(atan(car_speed * b.angular_velocity.y / 9.81), -0.6, 0.6)
 		rig.rotation.z = lerpf(rig.rotation.z, lean, 1.0 - exp(-dt * 8.0))
+
+
+# ---- the boat ---------------------------------------------------------------------
+
+func _board(b: Dictionary) -> void:
+	vehicle = b
+	b.driver = true
+	b.kept = true                    # where you leave it, it stays
+	state = "idle"; speed = 0.0; vy = 0.0
+	_steer_boat(0.0)
+	_mouse_idle = 10.0
+
+
+# At the helm: the keys go to the motor and the outboard, and you stand at the
+# console while the boat goes where the water and the physics take it.
+func _steer_boat(dt: float) -> void:
+	var key := func(k: Key, alt: Key) -> float:
+		return 1.0 if Input.is_physical_key_pressed(k) or Input.is_physical_key_pressed(alt) else 0.0
+	var boat: RigidBody3D = vehicle.boat
+	boat.throttle = key.call(KEY_W, KEY_UP) - key.call(KEY_S, KEY_DOWN)
+	boat.steer = key.call(KEY_A, KEY_LEFT) - key.call(KEY_D, KEY_RIGHT)
+	boat.boost = Input.is_physical_key_pressed(KEY_SHIFT)
+	car_speed = boat.speed()
+	speed = absf(car_speed)
+	heading = boat.heading()
+	vehicle.pos = Vector2(boat.global_position.x, boat.global_position.z)
+	# On the floorboards behind the wheel, hands on it.
+	global_position = boat.global_transform * Vector3(0.3, 0.1, 1.5)
+	body.rotation = Vector3(0, heading, 0)
+	body.position.y = 0.0
+	body.animate(maxf(dt, 0.0), "idle", 0.0)
+	for arm in [[body.sh_l, body.el_l], [body.sh_r, body.el_r]]:
+		arm[0].rotation.x = 0.75
+		arm[1].rotation.x = 0.7
+	body.sh_l.rotation.z = 0.25; body.sh_r.rotation.z = -0.25
+	_parcel.visible = false
+
+
+# Step onto the quay if there is one within reach, else into the canal.
+func _leave_boat(v: Dictionary) -> void:
+	var boat: RigidBody3D = v.boat
+	v.driver = false
+	boat.throttle = 0.0; boat.steer = 0.0; boat.boost = false
+	car_speed = 0.0
+	var c := Vector2(boat.global_position.x, boat.global_position.z)
+	var f := Vector2(-sin(heading), -cos(heading))
+	var right := Vector2(-f.y, f.x)
+	for d in [1.8, 2.4, 3.0, 3.6]:
+		for side in [right, -right, f * 1.8, -f * 1.6]:
+			var p: Vector2 = c + side * d
+			var p3 := Vector3(p.x, 0.0, p.y)
+			if streamer.water_at(p3) != 1 and _free(p3) and not traffic.blocked(p, {}):
+				var g = _ground(p3)
+				global_position = Vector3(p.x, g if g != null else 0.0, p.y)
+				vy = 0.0; grounded = true; state = "idle"; speed = 0.0
+				return
+	var p: Vector2 = c + right * 1.9
+	global_position = Vector3(p.x, SWIM_Y, p.y)
+	vy = 0.0; grounded = false; state = "swim"; speed = 0.0
 
 
 # The height of what vehicles drive on (street, bridge deck) under p.

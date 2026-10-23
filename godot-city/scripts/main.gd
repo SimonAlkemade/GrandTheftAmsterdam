@@ -6,6 +6,7 @@ extends Node3D
 ##   Map:     drag to pan, right-drag to rotate, wheel/pinch to zoom.
 ## Test arguments (after `--`): --shot=out.png --view=map|tram|walk --hour=17
 ##   --wait=12 --run (walk mode: hold W and Shift, then turn, to test running)
+##   --vehicle=car|canta|bike|rack|bus|tram|boat|swim (get in, drive, get out)
 
 const Materials := preload("res://scripts/materials.gd")
 const Streamer := preload("res://scripts/city_streamer.gd")
@@ -15,10 +16,12 @@ const Walker := preload("res://scripts/walker.gd")
 const Models := preload("res://scripts/vehicle_models.gd")
 const Minimap := preload("res://scripts/minimap.gd")
 const Mission := preload("res://scripts/mission.gd")
+const Boats := preload("res://scripts/boats.gd")
 
 var mats
 var streamer
 var traffic
+var boats
 var cam: Camera3D
 var walker
 var mission
@@ -52,6 +55,9 @@ func _ready() -> void:
 	add_child(traffic)
 	streamer.tile_added.connect(func(key, r): traffic.add_tile(key, r.lanes))
 	streamer.tile_removed.connect(func(key): traffic.remove_tile(key))
+	boats = Boats.new()
+	boats.streamer = streamer
+	add_child(boats)
 
 	cam = MapCamera.new()
 	add_child(cam)
@@ -64,6 +70,7 @@ func _ready() -> void:
 	add_child(walker)
 	walker.setup(streamer, cam)
 	walker.traffic = traffic
+	walker.boats = boats
 	mission = Mission.new()
 	add_child(mission)
 	mission.setup(streamer, traffic, walker)
@@ -247,7 +254,7 @@ func _hud() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
 	var mm := Minimap.new()
-	mm.streamer = streamer; mm.traffic = traffic; mm.walker = walker
+	mm.streamer = streamer; mm.traffic = traffic; mm.walker = walker; mm.boats = boats
 	mm.anchor_top = 1.0; mm.anchor_bottom = 1.0
 	layer.add_child(mm)
 	mm.offset_left = 22; mm.offset_right = 22 + Minimap.SIZE
@@ -257,7 +264,7 @@ func _hud() -> void:
 	ui.minimap = mm
 	_mission_hud(layer)
 	var hint := Label.new()
-	hint.text = "WASD / arrows  move     Shift  run     Space  jump     E  get in or out of a vehicle\nMouse  look     Wheel  zoom     M  map     Esc  free mouse"
+	hint.text = "WASD / arrows  move     Shift  run     Space  jump     E  get in or out of a vehicle or boat\nMouse  look     Wheel  zoom     M  map     Esc  free mouse"
 	hint.add_theme_font_size_override("font_size", 13)
 	hint.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
 	hint.add_theme_constant_override("outline_size", 4)
@@ -485,11 +492,13 @@ func _process(delta: float) -> void:
 		ui.area.text = streamer.nearest_name(focus, 60.0) if cam.dist < 500.0 else ""
 	streamer.focus = focus
 	traffic.focus = focus
+	boats.focus = focus
+	boats.target = 14 if mode == "walk" else 0
 	traffic.enabled = traffic_on and (mode == "walk" or cam.dist < 1600.0)
 	var s: Dictionary = streamer.stats()
 	var c: Dictionary = traffic.count()
-	ui.stats.text = "%d chunks (%d loading) · %s buildings\n%d cars · %d buses · %d trams · %d Cantas · %d cyclists · %d fps" % [
-		s.ready, s.loading, _thousands(s.buildings), c.car, c.bus, c.tram, c.canta, c.bike, Engine.get_frames_per_second()]
+	ui.stats.text = "%d chunks (%d loading) · %s buildings\n%d cars · %d buses · %d trams · %d Cantas · %d cyclists · %d boats · %d fps" % [
+		s.ready, s.loading, _thousands(s.buildings), c.car, c.bus, c.tram, c.canta, c.bike, boats.boats.size(), Engine.get_frames_per_second()]
 	sun.global_position = focus
 	_mission_ui()
 	if _shot_t >= 0.0:
@@ -557,6 +566,35 @@ func _test_vehicle(kind: String) -> void:
 		walker.cam_pitch = 0.25
 		print("veh: next to a parked bike %.0f m from the start" % b.at.distance_to(here))
 		_veh_step = 1; _veh_t = 0.0
+	elif _veh_step == 0 and _veh_t > 1.0 and (kind == "boat" or kind == "swim"):
+		var here := Vector2(walker.global_position.x, walker.global_position.z)
+		var best = null
+		for b in boats.boats:
+			if best == null or b.pos.distance_to(here) < best.pos.distance_to(here):
+				best = b
+		if best == null or _veh_t < 4.0:
+			return                        # let a few moor first
+		var boat: Node3D = best.boat
+		var right := Vector2(boat.global_transform.basis.x.x, boat.global_transform.basis.x.z)
+		var at := Vector2.INF
+		if kind == "swim":                # in the water beside it
+			at = best.pos - right * 2.0
+			walker.global_position = Vector3(at.x, walker.SWIM_Y, at.y)
+			walker.state = "swim"; walker.grounded = false
+		else:                             # on the quay it is moored along
+			for d in range(2, 9):
+				for sd in [right, -right]:
+					var p: Vector2 = best.pos + sd * float(d)
+					if at == Vector2.INF and streamer.water_at(Vector3(p.x, 0, p.y)) != 1:
+						at = p
+			if at == Vector2.INF:
+				return
+			walker.global_position = Vector3(at.x, 0.0, at.y)
+		var d: Vector2 = best.pos - at
+		walker.cam_yaw = atan2(-d.x, -d.y) + PI + 0.4
+		walker.cam_pitch = 0.3
+		print("veh: %s next to a boat %.0f m from the start, state=%s" % [kind, best.pos.distance_to(here), walker.state])
+		_veh_step = 1; _veh_t = 0.0
 	elif _veh_step == 0 and _veh_t > 1.0:
 		var best = null
 		for v in traffic.vehicles:
@@ -593,7 +631,12 @@ func _test_vehicle(kind: String) -> void:
 			walker._mouse_idle = 0.0
 		if Engine.get_process_frames() % 10 == 0:
 			var physics := ""
-			if walker.vehicle.has("body"):   # the suspension at work: ride height, pitch and roll
+			if walker.vehicle.kind == "boat":   # afloat: waterline, pitch and roll
+				var bt: RigidBody3D = walker.vehicle.boat
+				var e := bt.global_transform.basis.get_euler()
+				physics = " y=%.3f pitch=%.2f° roll=%.2f° rudder=%.2f slide=%.2f" % [bt.global_position.y, rad_to_deg(e.x), rad_to_deg(e.z), bt.rudder,
+					bt.linear_velocity.dot(bt.global_transform.basis.x)]
+			elif walker.vehicle.has("body"):   # the suspension at work: ride height, pitch and roll
 				var b: VehicleBody3D = walker.vehicle.body
 				var e := b.global_transform.basis.get_euler()
 				physics = " y=%.3f pitch=%.2f° roll=%.2f° steer=%.2f" % [b.global_position.y, rad_to_deg(e.x), rad_to_deg(e.z), b.steering]
@@ -604,7 +647,7 @@ func _test_vehicle(kind: String) -> void:
 			press.call(KEY_E); press.call(KEY_E, false)
 			_veh_step = 3; _veh_t = 0.0
 	elif _veh_step == 3 and _veh_t > 0.5:
-		print("veh: out=%s at %s body=%s" % [walker.vehicle == null, walker.global_position.snapped(Vector3.ONE * 0.1), walker.body.visible])
+		print("veh: out=%s at %s body=%s state=%s" % [walker.vehicle == null, walker.global_position.snapped(Vector3.ONE * 0.1), walker.body.visible, walker.state])
 		_veh_step = 4
 
 

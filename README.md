@@ -9,8 +9,11 @@ you can walk, cycle and drive around in, GTA-style.
 - **Traffic** on the real street, bike-path and tram network: cars, GVB buses,
   three-section trams, cyclists and red Cantas.
 - **E** gets you into whatever is next to you: drive a car or a Canta, ride a
-  bike (parked at racks and along the house fronts, or a cyclist's), or ride a
-  bus or tram along its route.
+  bike (parked at racks and along the house fronts, or a cyclist's), ride a
+  bus or tram along its route, or take one of the motor boats moored in the
+  canals (from the quay, or swimming up to it).
+- **Canals** you can fall into and swim in, and sail: the sloepen float on
+  real buoyancy, pitch and roll, and drift through their turns.
 - **Mission 1, parcel courier:** pick parcels up and deliver them across town,
   GTA-style yellow circles, a yellow route on the minimap and the map, a clock
   and pay.
@@ -19,7 +22,7 @@ you can walk, cycle and drive around in, GTA-style.
 **Play:** open `godot-city/` in Godot 4.4 or newer and press F5. Controls and
 details are in [godot-city/README.md](godot-city/README.md).
 
-The bikes and the Canta are modelled in Blender by scripts in `blender/`.
+The bikes, the Canta and the boat are modelled in Blender by scripts in `blender/`.
 `generate_buildings.py` is an untested-against-live-services pipeline that
 cuts facade photos out of the City of Amsterdam's open street panoramas and
 sends them to Tripo for 3D models.

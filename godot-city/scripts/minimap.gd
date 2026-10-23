@@ -10,12 +10,13 @@ const COLORS := {
 	"water": Color("3a78b0"), "green": Color("3f7a4a"), "walk": Color("4b5057"),
 	"road": Color("c9ccd1"), "tram": Color("8e6b4a"), "roof": Color("858a93"),
 }
-const VEHICLE := {"car": Color("e8e8e8"), "bus": Color("4f8dff"), "tram": Color("ff5a4f"), "bike": Color("ffd166"), "canta": Color("ff3b3b")}
+const VEHICLE := {"car": Color("e8e8e8"), "bus": Color("4f8dff"), "tram": Color("ff5a4f"), "bike": Color("ffd166"), "canta": Color("ff3b3b"), "boat": Color("ffffff")}
 const MISSION := Color(1.0, 0.82, 0.08)
-const DOT := {"car": 4.5, "bus": 7.0, "tram": 7.0, "bike": 2.6, "canta": 3.5}
+const DOT := {"car": 4.5, "bus": 7.0, "tram": 7.0, "bike": 2.6, "canta": 3.5, "boat": 4.0}
 
 var streamer
 var traffic
+var boats
 var walker
 var mission                          # the current job: its route and target show here
 var _tris: Array = []
@@ -77,6 +78,11 @@ func _draw_map() -> void:
 	for v in traffic.vehicles:
 		if v.pos.distance_to(p) < VIEW + 10.0:
 			_map.draw_circle(v.pos, DOT[v.kind], VEHICLE[v.kind])
+	if boats:
+		for b in boats.boats:             # boats: a white dot ringed in canal blue
+			if b.pos.distance_to(p) < VIEW + 10.0:
+				_map.draw_circle(b.pos, DOT.boat + 1.5, Color("173a5c"))
+				_map.draw_circle(b.pos, DOT.boat, VEHICLE.boat)
 	_map.draw_set_transform_matrix(Transform2D())
 
 
