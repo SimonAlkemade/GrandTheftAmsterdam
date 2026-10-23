@@ -6,7 +6,7 @@ extends Node3D
 ##   Map:     drag to pan, right-drag to rotate, wheel/pinch to zoom.
 ## Test arguments (after `--`): --shot=out.png --view=map|tram|walk --hour=17
 ##   --wait=12 --run (walk mode: hold W and Shift, then turn, to test running)
-##   --vehicle=car|canta|bike|rack|bus|tram|boat|swim (get in, drive, get out)
+##   --vehicle=car|canta|bike|rack|bus|tram|boat|swim|damrak (get in, drive, get out)
 
 const Materials := preload("res://scripts/materials.gd")
 const Streamer := preload("res://scripts/city_streamer.gd")
@@ -37,6 +37,10 @@ var _follow = null
 var traffic_on := true
 var _pending_walk := false
 var _walk_at := Vector3.ZERO
+# The Damrak basin by the Beurs, where its water comes nearest the Dam: a boat
+# always waits at its quay there (scene metres: x east, z south).
+const DAMRAK_BOAT := Vector2(172.0, -205.0)
+var _damrak_boat := {}
 
 
 func _ready() -> void:
@@ -470,6 +474,8 @@ func _process(delta: float) -> void:
 	var focus: Vector3
 	if mode == "walk":
 		focus = walker.global_position
+		if _damrak_boat.is_empty() and not streamer.tile_at(Vector3(DAMRAK_BOAT.x, 0, DAMRAK_BOAT.y)).is_empty():
+			_damrak_boat = boats.moor(DAMRAK_BOAT, Vector2(_walk_at.x, _walk_at.z))
 		streamer.radius = 1100.0
 		traffic.player = walker.global_position if walker.vehicle == null else Vector3(1e9, 0, 1e9)
 		ui.prompt.text = walker.prompt
@@ -566,12 +572,14 @@ func _test_vehicle(kind: String) -> void:
 		walker.cam_pitch = 0.25
 		print("veh: next to a parked bike %.0f m from the start" % b.at.distance_to(here))
 		_veh_step = 1; _veh_t = 0.0
-	elif _veh_step == 0 and _veh_t > 1.0 and (kind == "boat" or kind == "swim"):
+	elif _veh_step == 0 and _veh_t > 1.0 and (kind == "boat" or kind == "swim" or kind == "damrak"):
 		var here := Vector2(walker.global_position.x, walker.global_position.z)
 		var best = null
 		for b in boats.boats:
 			if best == null or b.pos.distance_to(here) < best.pos.distance_to(here):
 				best = b
+		if kind == "damrak":
+			best = null if _damrak_boat.is_empty() else _damrak_boat
 		if best == null or _veh_t < 4.0:
 			return                        # let a few moor first
 		var boat: Node3D = best.boat
@@ -582,9 +590,9 @@ func _test_vehicle(kind: String) -> void:
 			walker.global_position = Vector3(at.x, walker.SWIM_Y, at.y)
 			walker.state = "swim"; walker.grounded = false
 		else:                             # on the quay it is moored along
-			for d in range(2, 9):
+			for d in range(8, 36):
 				for sd in [right, -right]:
-					var p: Vector2 = best.pos + sd * float(d)
+					var p: Vector2 = best.pos + sd * d * 0.25
 					if at == Vector2.INF and streamer.water_at(Vector3(p.x, 0, p.y)) != 1:
 						at = p
 			if at == Vector2.INF:

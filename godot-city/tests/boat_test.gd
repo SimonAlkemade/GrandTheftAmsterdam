@@ -18,6 +18,22 @@ func _initialize() -> void:
 	_run.call_deferred()
 
 
+# A quay wall across the canal at z, two-sided triangles from the bed to the
+# street, as the chunks build it.
+func _quay(z: float) -> void:
+	var wall := StaticBody3D.new()
+	wall.collision_layer = 2
+	var shape := ConcavePolygonShape3D.new()
+	shape.backface_collision = true
+	var a := Vector3(-30, -2.6, z); var b := Vector3(30, -2.6, z)
+	var c := Vector3(30, 0.09, z); var d := Vector3(-30, 0.09, z)
+	var e := Vector3(-30, 0.09, z - 20); var f := Vector3(30, 0.09, z - 20)
+	shape.set_faces(PackedVector3Array([a, b, c, a, c, d, d, c, f, d, f, e]))
+	var cs := CollisionShape3D.new(); cs.shape = shape
+	wall.add_child(cs)
+	root.add_child(wall)
+
+
 func _step(n: int) -> void:
 	for i in n:
 		await physics_frame
@@ -67,5 +83,22 @@ func _run() -> void:
 	_check(slide > 0.15, "drifts sideways in the turn (%.2f m/s across)" % slide)
 	var rate := absf(b.angular_velocity.y)
 	_check(rate < 1.2, "turns at a boat's pace (%.2f rad/s)" % rate)
+	# Rammed into a quay wall at full power, it stays in the canal.
+	b.throttle = 0.0; b.steer = 0.0
+	b.rudder = 0.0
+	b.linear_velocity = Vector3.ZERO; b.angular_velocity = Vector3.ZERO
+	b.global_transform = Transform3D(Basis(Vector3.UP, 0.25), Vector3(0, Boat.WATER_Y, 0))
+	_quay(-45.0)
+	await _step(30)
+	b.throttle = 1.0; b.boost = true
+	var top := -10.0
+	var tilt := 0.0
+	for i in 60 * 14:
+		await physics_frame
+		top = maxf(top, b.global_position.y)
+		tilt = maxf(tilt, maxf(absf(b.rotation.x), absf(b.rotation.z)))
+	_check(top < Boat.WATER_Y + 0.8, "rams a quay wall without leaving the water (highest y %.2f)" % top)
+	_check(b.global_position.z > -45.0, "and does not go through it (z %.2f)" % b.global_position.z)
+	_check(tilt < 0.6, "nor tip over (most tilt %.2f rad)" % tilt)
 	print("boat test: %d failed" % _fails)
 	quit(1 if _fails else 0)

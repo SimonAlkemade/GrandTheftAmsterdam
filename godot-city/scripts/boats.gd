@@ -73,16 +73,8 @@ func _try_spawn(f: Vector2) -> void:
 		return
 	if streamer.water_at(Vector3(p.x, 0, p.y)) != 1:
 		return
-	# Lie along the canal: the direction with the longest open water.
-	var best := -1.0
-	var along := Vector2.ZERO
-	for k in 12:
-		var a := k * PI / 12.0
-		var dir := Vector2(cos(a), sin(a))
-		var run := _run(p, dir, 12.0) + _run(p, -dir, 12.0)
-		if run > best:
-			best = run; along = dir
-	if best < 14.0:
+	var along := _along(p, 12.0)
+	if along == Vector2.ZERO:
 		return                        # not a canal: a basin corner or a sliver
 	# Moor close to the nearer quay.
 	var across := Vector2(-along.y, along.x)
@@ -91,12 +83,70 @@ func _try_spawn(f: Vector2) -> void:
 	if wl + wr < 6.0:
 		return                        # too narrow to leave a boat in
 	var to := across * (wl - 1.5) if wl < wr else -across * (wr - 1.5)
-	p += to
+	p = _clear(p + to, along, -to.normalized())
+	if p == Vector2.INF:
+		return
 	for b in boats:
 		if b.pos.distance_to(p) < 9.0:
 			return
 	var yaw := atan2(-along.x, -along.y) + (PI if _rng.randf() < 0.5 else 0.0)
 	add(p, yaw)
+
+
+## Moor a boat for good at the quay of the water at p on the side facing
+## `toward` (the Damrak by the start, say), bow to the open water. {} if p is
+## not open water yet.
+func moor(p: Vector2, toward: Vector2) -> Dictionary:
+	if streamer.water_at(Vector3(p.x, 0, p.y)) != 1:
+		return {}
+	var along := _along(p, 120.0)     # a basin is wide: look far to find which way it runs
+	if along == Vector2.ZERO:
+		return {}
+	var across := Vector2(-along.y, along.x)
+	if across.dot(toward - p) < 0.0:
+		across = -across
+	if _run(p, along, 200.0) < _run(p, -along, 200.0):
+		along = -along                # bow out, not into the end of the basin
+	var to_quay := _run(p, across, 120.0)
+	p = _clear(p + across * maxf(0.0, to_quay - 1.6), along, -across)
+	if p == Vector2.INF:
+		return {}
+	var yaw := atan2(-along.x, -along.y)
+	var b := add(p, yaw, Color(COLORS[0]))
+	b.kept = true
+	return b
+
+
+# p, or p moved out along `away` until the hull and half a metre round it lie
+# on open water (never in a quay wall: the physics would fling it out). INF if
+# it does not fit.
+func _clear(p: Vector2, along: Vector2, away: Vector2) -> Vector2:
+	var across := Vector2(-along.y, along.x)
+	for k in 12:
+		var q := p + away * 0.5 * k
+		var ok := true
+		for a in [-3.2, -1.6, 0.0, 1.6, 3.2]:
+			for c in [-1.5, 1.5]:
+				var t: Vector2 = q + along * a + across * c
+				if streamer.water_at(Vector3(t.x, 0, t.y)) != 1:
+					ok = false
+		if ok:
+			return q
+	return Vector2.INF
+
+
+# The direction of the longest open water through p (the canal's), or zero if
+# it runs less than 14 m.
+func _along(p: Vector2, reach: float) -> Vector2:
+	var best := -1.0
+	var along := Vector2.ZERO
+	for k in 12:
+		var a := k * PI / 12.0
+		var dir := Vector2(cos(a), sin(a))
+		var run := _run(p, dir, reach) + _run(p, -dir, reach)
+		if run > best:
+			best = run; along = dir
+	return along if best >= 14.0 else Vector2.ZERO
 
 
 # How far open water runs from p along dir (up to max).
@@ -109,11 +159,12 @@ func _run(p: Vector2, dir: Vector2, max_d: float) -> float:
 	return max_d
 
 
-func add(p: Vector2, yaw: float) -> Dictionary:
+func add(p: Vector2, yaw: float, col := Color.TRANSPARENT) -> Dictionary:
 	var boat: RigidBody3D = Boat.new()
 	var model: Node3D = _scene.instantiate()
 	var hull := model.find_children("*", "MeshInstance3D", true, false)
-	var col := Color(COLORS[_rng.randi() % COLORS.size()])
+	if col.a == 0.0:
+		col = Color(COLORS[_rng.randi() % COLORS.size()])
 	if col != Color(COLORS[0]):
 		for mi: MeshInstance3D in hull:   # repaint the topsides
 			for s in mi.mesh.get_surface_count():

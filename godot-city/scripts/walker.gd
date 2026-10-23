@@ -15,6 +15,7 @@ const SWIM_Y := -2.65          # your feet while swimming: the canal is 1.4 m be
 const BRIDGE_Y := 0.3
 const WATER_Y := -1.4          # the canal surface (TileBuilder.WATER_Y)
 const ENTER_RANGE := 3.0
+const BOARD_RANGE := 4.0       # a boat lies below the quay: a little more reach
 # Per vehicle: camera height above the road, camera distance, half width.
 const VEHICLE_CAM := {"car": [1.7, 7.5, 0.9], "bus": [3.2, 15.0, 1.3], "tram": [3.4, 19.0, 1.2], "bike": [1.5, 4.8, 0.4], "canta": [1.9, 6.0, 0.6], "boat": [2.0, 8.5, 1.0]}
 # What you can drive (and how) is in VehiclePhysics.SPEC.
@@ -156,7 +157,7 @@ func _physics_process(delta: float) -> void:
 	var here := Vector2(global_position.x, global_position.z)
 	var near: Dictionary = traffic.nearest(here, ENTER_RANGE) if traffic else {}
 	prompt = "" if near.is_empty() else {"car": "E  drive this car", "bus": "E  ride the bus", "tram": "E  ride the tram", "bike": "E  ride this bike", "canta": "E  drive this Canta"}[near.kind]
-	if prompt == "" and boats and not boats.nearest(here, ENTER_RANGE).is_empty():
+	if prompt == "" and boats and not boats.nearest(here, BOARD_RANGE).is_empty():
 		prompt = "E  take the boat"
 	if prompt == "" and Engine.get_physics_frames() % 6 == 0:
 		_rack_bike = streamer.parked_bike(here, 1.6)
@@ -263,7 +264,7 @@ func _get_in() -> void:
 	var here := Vector2(global_position.x, global_position.z)
 	var v: Dictionary = traffic.nearest(here, ENTER_RANGE)
 	if (v.is_empty() or state == "swim") and boats:
-		var bt: Dictionary = boats.nearest(here, ENTER_RANGE)
+		var bt: Dictionary = boats.nearest(here, BOARD_RANGE)
 		if not bt.is_empty():
 			_board(bt)
 			return

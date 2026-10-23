@@ -44,7 +44,9 @@ around you (`scripts/boats.gd` puts them on the loaded canal polygons, along
 the canal and close to a quay). E from the quay or the water takes the helm:
 W/S are the throttle (and astern), A/D swing the outboard, Shift opens it up.
 E again steps you onto the quay, or into the water if there is none in reach;
-the boat stays where you left it.
+the boat stays where you left it. One sloep always lies at the Damrak quay by
+the Beurs, the canal water nearest the Dam where you start: walk up the
+Damrak (about 450 m, the street with the tram line) to find it.
 
 Each boat is a RigidBody3D (`scripts/boat.gd`) held up by buoyancy: eight
 points round the bottom of the hull each lift in proportion to how deep they

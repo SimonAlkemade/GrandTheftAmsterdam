@@ -40,6 +40,9 @@ func _init() -> void:
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
 	center_of_mass = Vector3(0, -0.12, 0)
 	continuous_cd = true
+	physics_material_override = PhysicsMaterial.new()
+	physics_material_override.bounce = 0.1
+	physics_material_override.friction = 0.3   # it scrapes along a quay rather than climbing it
 	can_sleep = false             # it never quite stops moving on the water
 	gravity_scale = 1.0
 	# Two rows of four along the bottom of the hull.
@@ -79,6 +82,12 @@ func water_y(p: Vector3) -> float:
 
 func _physics_process(dt: float) -> void:
 	_t += dt
+	# Boats do not fly: a hard knock on a quay wall may not throw one up out of
+	# the canal (the collision solver can push a lot harder than water lifts).
+	if linear_velocity.y > 2.5:
+		linear_velocity.y = 2.5
+	if angular_velocity.length() > 2.5:
+		angular_velocity = angular_velocity.normalized() * 2.5
 	var xf := global_transform
 	# Buoyancy and heave damping, point by point.
 	for lp in _points:
