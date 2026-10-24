@@ -131,6 +131,13 @@ corner, and shoves a car it hits a good 5 m.
 
 ### Trams
 
+The trams are the yellow GVB trams of the 1990s (the 11G/12G), built in
+`vehicle_models.gd`: 27 m in three sections joined by bellows, a boxy
+high-floor body over a dark skirt and visible bogies, separate windows between
+yellow pillars, folding doors on the right-hand side only, a flat cab with a
+split windscreen, the destination box and line number above it and round
+headlights, a diamond pantograph on the roof.
+
 E at a tram's front cab puts you at its controls. A tram stays on its rails,
 so its physics is along them: 35 tonnes, up to 1.3 m/s² of traction fading
 towards 70 km/h, **W** power, **S** the service brake (50 km/h to a stop in

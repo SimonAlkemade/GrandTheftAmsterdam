@@ -111,29 +111,96 @@ static func bus() -> Node3D:
 	return n
 
 
-# One section of an Amsterdam tram (three make a 30 m 15G).
-static func tram_section(length: float, cab: int) -> Node3D:
+# One section of a 1990s Amsterdam tram (a GVB 11G/12G, three sections, 27 m):
+# a boxy high-floor body in GVB yellow on a dark skirt, a row of separate
+# windows between yellow pillars, folding doors on the right-hand side only
+# (the trams run one way), the bogies showing under it. `cab` -1 = the front
+# section (its flat cab with a split windscreen, the destination box and the
+# line number, round headlights), 1 = the rear (a back window and tail lights),
+# 0 = the middle. `doors` = where its doors are, metres from its middle.
+# Forward is -Z.
+static func tram_section(length: float, cab: int, doors: Array = []) -> Node3D:
 	var n := Node3D.new()
-	var white := mat("tram_white", Color("f2f3f4"), 0.35, 0.15)
-	box(n, Vector3(2.4, 2.6, length), Vector3(0, 1.85, 0), white)
-	box(n, Vector3(2.42, 1.1, length - 0.6), Vector3(0, 2.25, 0), mat("glass", Color("0d1418"), 0.08, 0.8))
-	box(n, Vector3(2.42, 0.45, length), Vector3(0, 0.78, 0), mat("tram_skirt", Color("2e3338"), 0.6))
-	box(n, Vector3(2.42, 0.16, length), Vector3(0, 1.12, 0), mat("tram_red", Color("c1272d"), 0.4))
-	if cab != 0:                               # sloped cab front with a lit sign
-		var z := -cab * length / 2.0
-		box(n, Vector3(2.3, 1.6, 0.4), Vector3(0, 2.1, z - cab * 0.15), mat("glass", Color("0d1418"), 0.08, 0.8))
-		box(n, Vector3(1.6, 0.3, 0.05), Vector3(0, 3.0, z - cab * 0.36), mat("dest", Color("2a1800"), 0.4, 0.0, Color("ffb020")))
-		for x in [-0.8, 0.8]:
-			box(n, Vector3(0.3, 0.16, 0.05), Vector3(x, 0.95, z - cab * 0.36), mat("headlight", Color("fff6d8"), 0.3, 0.0, Color("fff2c0")))
-	if cab == 0:                               # pantograph on the middle section
-		box(n, Vector3(1.6, 0.06, 0.08), Vector3(0, 4.05, 0), mat("panto", Color("2a2c2e"), 0.5, 0.6))
-		box(n, Vector3(0.06, 0.9, 0.06), Vector3(0, 3.6, -0.4), mat("panto", Color("2a2c2e"), 0.5, 0.6)).rotation.x = 0.6
-	box(n, Vector3(1.8, 0.4, length * 0.9), Vector3(0, 3.25, 0), mat("tram_roof", Color("cfd2d6"), 0.6))
-	wheels(n, 0.75, [-length * 0.3, length * 0.3], 0.34)
+	var yellow := mat("tram_yellow", Color("e2ac14"), 0.45, 0.05)
+	var glass := mat("tram_glass", Color("10171b"), 0.08, 0.7)
+	var frame := mat("tram_frame", Color("16181a"), 0.6)
+	var dark := mat("tram_skirt", Color("2b2e31"), 0.7)
+	var w := 2.35
+	box(n, Vector3(w, 2.55, length), Vector3(0, 1.98, 0), yellow)                 # the body, floor at 0.9 m
+	box(n, Vector3(w + 0.02, 0.42, length - 0.1), Vector3(0, 0.74, 0), dark)     # the skirt over the bogies
+	box(n, Vector3(w + 0.03, 0.05, length), Vector3(0, 1.36, 0), frame)          # the rubbing strip
+	# Windows: separate panes between yellow pillars, both sides, except where
+	# a door stands on the right.
+	var pane := 1.32
+	var pitch := pane + 0.2
+	var count := int((length - 0.7) / pitch)
+	var first := -(count - 1) * pitch / 2.0
+	for i in count:
+		var z := first + i * pitch
+		for side in [-1, 1]:
+			var at_door := false
+			for d in doors:
+				if side == 1 and absf(z - float(d)) < 0.75 + pane / 2.0 - 0.05:   # the door's width
+					at_door = true
+			if at_door:
+				continue
+			box(n, Vector3(0.03, 1.12, pane + 0.08), Vector3(side * (w / 2 + 0.01), 2.12, z), frame)
+			box(n, Vector3(0.03, 1.02, pane), Vector3(side * (w / 2 + 0.02), 2.13, z), glass)
+	# Folding doors (two leaves, tall glass) on the right-hand side.
+	for d in doors:
+		var dz := float(d)
+		box(n, Vector3(0.03, 2.05, 1.36), Vector3(w / 2 + 0.01, 1.78, dz), frame)
+		for leaf in [-0.33, 0.33]:
+			box(n, Vector3(0.03, 0.85, 0.56), Vector3(w / 2 + 0.02, 2.2, dz + leaf), glass)
+			box(n, Vector3(0.03, 0.7, 0.56), Vector3(w / 2 + 0.02, 1.22, dz + leaf), glass)
+		box(n, Vector3(0.6, 0.2, 1.2), Vector3(w / 2 - 0.2, 0.62, dz), dark)       # the step
+	# The roof: grey, a little narrower, with an equipment box.
+	box(n, Vector3(w - 0.12, 0.14, length - 0.05), Vector3(0, 3.31, 0), mat("tram_roof", Color("c9ccd0"), 0.6))
+	box(n, Vector3(1.3, 0.3, minf(2.4, length * 0.3)), Vector3(0, 3.53, length * 0.15), mat("tram_roofbox", Color("9ea3a8"), 0.6))
+	if cab == -1:
+		var z0 := -length / 2.0
+		# The flat cab: a split windscreen, the destination box over it with the
+		# line number beside it, round headlights and a bumper.
+		for x in [-0.56, 0.56]:
+			var ws := box(n, Vector3(1.06, 1.15, 0.04), Vector3(x, 2.15, z0 - 0.02), glass)
+			ws.rotation.x = -0.07                                                     # raked back a touch
+		box(n, Vector3(0.08, 1.2, 0.05), Vector3(0, 2.15, z0 - 0.03), frame)       # the pillar between them
+		box(n, Vector3(1.55, 0.34, 0.06), Vector3(0.28, 2.98, z0 - 0.03), mat("dest", Color("2a1800"), 0.4, 0.0, Color("ffb020")))
+		box(n, Vector3(0.42, 0.34, 0.06), Vector3(-0.82, 2.98, z0 - 0.03), mat("tram_line", Color("e8e8e0"), 0.4, 0.0, Color("fff6e0")))
+		var lamp := CylinderMesh.new(); lamp.top_radius = 0.11; lamp.bottom_radius = 0.11; lamp.height = 0.06
+		for x in [-0.78, 0.78]:
+			var mi := MeshInstance3D.new(); mi.mesh = lamp
+			mi.material_override = mat("headlight", Color("fff6d8"), 0.3, 0.0, Color("fff2c0"))
+			mi.rotation.x = PI / 2; mi.position = Vector3(x, 1.08, z0 - 0.03)
+			n.add_child(mi)
+		box(n, Vector3(w - 0.1, 0.22, 0.14), Vector3(0, 0.62, z0 - 0.06), dark)   # the bumper
+		# The pantograph, a diamond on the roof at the back of the front section.
+		var panto := mat("panto", Color("2a2c2e"), 0.5, 0.6)
+		var pz := length / 2.0 - 1.6
+		box(n, Vector3(1.5, 0.06, 0.1), Vector3(0, 4.34, pz), panto)               # the contact strip
+		var foot := Vector2(pz, 3.47); var knee := 0.36; var head := Vector2(pz, 4.32)
+		for k in [-1.0, 1.0]:
+			var mid := Vector2(pz + k * knee, (foot.y + head.y) / 2.0)
+			for arm in [[foot, mid], [mid, head]]:                                  # the lower and upper arm
+				var a: Vector2 = arm[0]; var c: Vector2 = arm[1]
+				var rod := box(n, Vector3(0.05, a.distance_to(c), 0.05), Vector3(0, (a.y + c.y) / 2.0, (a.x + c.x) / 2.0), panto)
+				rod.rotation.x = atan2(c.x - a.x, c.y - a.y)                         # tilt its length from a to c
+		box(n, Vector3(0.5, 0.08, 0.5), Vector3(0, 3.43, pz), panto)               # its base
+	elif cab == 1:
+		var z1 := length / 2.0
+		box(n, Vector3(1.7, 0.95, 0.04), Vector3(0, 2.2, z1 + 0.02), glass)        # the back window
+		for x in [-0.85, 0.85]:
+			box(n, Vector3(0.22, 0.14, 0.05), Vector3(x, 1.05, z1 + 0.03), mat("taillight", Color("5a0a0a"), 0.4, 0.0, Color("ff2a1a")))
+		box(n, Vector3(w - 0.1, 0.22, 0.14), Vector3(0, 0.62, z1 + 0.06), dark)
+	wheels(n, 0.75, [-length * 0.28, length * 0.28] if length > 8.0 else [0.0], 0.34)
 	return n
 
 
-static func tram_joint() -> MeshInstance3D:
-	var b := BoxMesh.new(); b.size = Vector3(2.2, 2.4, 0.9)
+## The bellows between two sections, standing on the rails as they do.
+static func tram_joint() -> Node3D:
+	var n := Node3D.new()
+	var b := BoxMesh.new(); b.size = Vector3(2.15, 2.4, 0.9)
 	var mi := MeshInstance3D.new(); mi.mesh = b; mi.material_override = mat("bellows", Color("23272b"), 0.9)
-	return mi
+	mi.position.y = 1.95
+	n.add_child(mi)
+	return n
