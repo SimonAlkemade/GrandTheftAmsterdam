@@ -98,13 +98,39 @@ leans by exactly the angle that balances its turn (tan lean = speed x yaw rate
 decks, quay walls and canal beds. The traffic itself stays on its routes, but
 each vehicle in it is solid.
 
+Cars and Cantas handle the GTA way:
+
+| | Car | Canta |
+|---|---|---|
+| 0-100 km/h | 4.7 s | (0-36 km/h in 2.2 s) |
+| Top speed | 125 km/h | 46 km/h |
+| Braking from 100 km/h | 51 m | |
+
+- **W** drives, **S** brakes and then reverses, **A/D** steer: less lock the
+  faster you go, and when the tail steps out the steering helps you catch it.
+- **Space** is the handbrake: the rear wheels lock and lose their grip, so a
+  flick of steering swings the tail out (a 45° slide and a 110° turn in a
+  second from 60 km/h) and it gathers itself when you let go.
+- Downforce and an anti-roll bar: it leans into a fast corner (about 3°) and
+  stays on its wheels at full lock at 80 km/h.
+- In the air, or on its side, **A/D** roll it and **W/S** tip it.
+- A street car or Canta you are about to hit stops being scenery on rails and
+  becomes a real car just before the hit: a crash shoves it, spins it, or (in a
+  450 kg Canta against a 1250 kg car) bounces you off it. Its driver then
+  brakes, so it skids to a stop where the crash left it. Buses and trams stay
+  on their rails.
+
+`tests/car_test.gd` measures all of it on a flat test ground:
+
+    godot --headless --path godot-city --script tests/car_test.gd [-- --kind=canta]
+
 ## Traffic
 
 Cyclists ride the bike paths and the edges of the streets, and parked bikes
 stand at the city's bike racks and in small groups along the house fronts. Press E next to a parked bike, or next to a
 cyclist, to ride it (Shift pedals hard). Red Cantas, the narrow Dutch microcars, potter along the streets too (E to
-drive one, 45 km/h tops). Press E next to a car to take the wheel: WASD or the arrow keys drive,
-Space brakes, and walls, canals and other traffic stop you. Press E next to
+drive one, 45 km/h tops). Press E next to a car to take the wheel (see
+Driving physics above for the controls). Press E next to
 a bus or tram to ride it along its route. E again gets you out; a car you
 leave stays parked where you left it.
 

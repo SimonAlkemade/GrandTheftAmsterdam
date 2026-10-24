@@ -3,7 +3,8 @@ extends CharacterBody3D
 ## jump, mouse to look (captured), wheel to zoom the camera. Walls stop you;
 ## canals have no floor, so you fall in and swim, and climb out at a quay.
 ## Pedestrians walk the streets around you.
-## E next to a car takes the wheel (WASD or arrows drive, Space brakes); E
+## E next to a car takes the wheel (W drives, S brakes and reverses, A/D
+## steer, Space is the handbrake: see VehiclePhysics); E
 ## next to a bike (parked, or a cyclist's) rides it, Shift to pedal hard; E
 ## next to a bus or tram rides it along its route; E next to a moored boat
 ## (from the quay, or swimming) takes the helm; E again gets you out.
@@ -299,16 +300,7 @@ func _get_in() -> void:
 		v.driver = true
 		v.parked = false
 		if not v.has("body"):
-			# From here on it is a real vehicle: sprung wheels on the street.
-			var visual: Node3D = v.parts[0][0]
-			var xf := Transform3D(Basis(Vector3.UP, visual.rotation.y), Vector3(visual.position.x, _ground_y(visual.position) + 0.05, visual.position.z))
-			var moving := Vector3(-sin(visual.rotation.y), 0, -cos(visual.rotation.y)) * float(v.speed)
-			var b: VehicleBody3D = VPhys.make(v.kind, visual, xf)
-			v.node.add_child(b)
-			b.linear_velocity = moving if v.kind == "bike" else Vector3.ZERO
-			v.body = b
-			v.rig = visual
-			v.parts[0][0] = b
+			_physical(v, v.kind == "bike")
 		var b: VehicleBody3D = v.body
 		b.sleeping = false
 		global_position = Vector3(b.global_position.x, 0.0, b.global_position.z)
@@ -320,6 +312,47 @@ func _get_in() -> void:
 		v.rider = true
 		_ride()
 	_mouse_idle = 10.0
+
+
+# From here on a traffic vehicle is a real one: sprung wheels on the street,
+# keeping its speed if `moving`. It leaves its route for good.
+func _physical(v: Dictionary, moving: bool) -> VehicleBody3D:
+	var visual: Node3D = v.parts[0][0]
+	var xf := Transform3D(Basis(Vector3.UP, visual.rotation.y), Vector3(visual.position.x, _ground_y(visual.position) + 0.05, visual.position.z))
+	var b: VehicleBody3D = VPhys.make(v.kind, visual, xf)
+	v.node.add_child(b)
+	if moving:
+		b.linear_velocity = Vector3(-sin(visual.rotation.y), 0, -cos(visual.rotation.y)) * float(v.speed)
+	v.body = b
+	v.rig = visual
+	v.parts[0][0] = b
+	return b
+
+
+# GTA rules: a car or Canta you are about to hit stops being scenery on rails
+# and becomes a real car just before you hit it, so the crash pushes, spins or
+# shunts it. (Buses and trams stay on their rails, like the walls they are.)
+func _knock_traffic(b: VehicleBody3D) -> void:
+	var me := Vector2(b.global_position.x, b.global_position.z)
+	var mv := Vector2(b.linear_velocity.x, b.linear_velocity.z)
+	if mv.length() < 2.0:
+		return
+	for v in traffic.vehicles:
+		if v == vehicle or v.has("body") or not (v.kind == "car" or v.kind == "canta"):
+			continue
+		var n: Node3D = v.parts[0][0]
+		var at := Vector2(n.position.x, n.position.z)
+		var gap := at.distance_to(me)
+		if gap > 7.5:
+			continue
+		var tv := Vector2(-sin(n.rotation.y), -cos(n.rotation.y)) * float(v.speed)
+		var closing := (mv - tv).dot((at - me) / maxf(gap, 0.01))
+		if closing > 1.5 and gap < 3.2 + closing * 0.12:
+			var hit := _physical(v, true)
+			for w in hit.get_children():   # its driver stands on the brake: it skids to a stop
+				if w is VehicleWheel3D: (w as VehicleWheel3D).brake = 5.0
+			v.parked = true                # off its route: it goes where the crash sends it
+			v.knocked = true
 
 
 func _get_out() -> void:
@@ -367,6 +400,8 @@ func _drive(dt: float) -> void:
 	var spec: Dictionary = DRIVE[vehicle.kind]
 	var p := b.global_position
 	var sunk := p.y < WATER_Y + 0.2       # it went into a canal: no more driving
+	if vehicle.kind != "bike":
+		_knock_traffic(b)
 	car_speed = VPhys.drive(b, vehicle.kind, 0.0 if sunk else throttle, steer, Input.is_physical_key_pressed(KEY_SPACE),
 		Input.is_physical_key_pressed(KEY_SHIFT), dt)
 	b.linear_damp = 2.5 if sunk else 0.0

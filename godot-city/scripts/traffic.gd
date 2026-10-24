@@ -240,6 +240,9 @@ func _process(delta: float) -> void:
 	delta = minf(delta, 0.1)
 	var counts := {"car": 0, "bus": 0, "tram": 0, "bike": 0, "canta": 0}
 	for v in vehicles.duplicate():
+		if v.has("body") and not v.get("driver", false):   # a knocked or left car: where it is now
+			var bp: Vector3 = v.body.global_position
+			v.pos = Vector2(bp.x, bp.z)
 		if v.pos.distance_to(Vector2(focus.x, focus.z)) > spawn_radius + 160.0 and not _occupied(v):
 			_despawn(v)
 		else:

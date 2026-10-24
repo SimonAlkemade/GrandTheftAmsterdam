@@ -3,6 +3,7 @@ extends Node3D
 ## GVB buses and trams drive the real street and track network, and you can
 ## run around it on foot. You start on the Dam; M switches to the map.
 ##   On foot: WASD, Shift runs, Space jumps, mouse looks, Esc frees the mouse.
+##   Driving: W drives, S brakes and reverses, Space is the handbrake.
 ##   Map:     drag to pan, right-drag to rotate, wheel/pinch to zoom.
 ## Test arguments (after `--`): --shot=out.png --view=map|tram|walk --hour=17
 ##   --wait=12 --run (walk mode: hold W and Shift, then turn, to test running)
@@ -37,6 +38,14 @@ var _follow = null
 var traffic_on := true
 var _pending_walk := false
 var _walk_at := Vector3.ZERO
+# The key help top left, for what you are doing.
+const HINTS := {
+	"foot": "WASD / arrows  move     Shift  run     Space  jump     E  get in or out of a vehicle or boat\nMouse  look     Wheel  zoom     M  map     Esc  free mouse",
+	"car": "W  drive     S  brake / reverse     A D  steer     Space  handbrake     E  get out\nIn the air or on its side: A D roll it, W S tip it     Mouse  look     M  map",
+	"bike": "W  pedal     S  back     A D  steer     Shift  pedal hard     Space  brake     E  get off\nMouse  look     M  map",
+	"boat": "W  throttle     S  astern     A D  outboard     Shift  full power     E  get off\nMouse  look     M  map",
+	"ride": "E  get off\nMouse  look     M  map",
+}
 # The Damrak basin by the Beurs, where its water comes nearest the Dam: a boat
 # always waits at its quay there (scene metres: x east, z south).
 const DAMRAK_BOAT := Vector2(172.0, -205.0)
@@ -269,7 +278,7 @@ func _hud() -> void:
 	ui.minimap = mm
 	_mission_hud(layer)
 	var hint := Label.new()
-	hint.text = "WASD / arrows  move     Shift  run     Space  jump     E  get in or out of a vehicle or boat\nMouse  look     Wheel  zoom     M  map     Esc  free mouse"
+	hint.text = HINTS.foot
 	hint.add_theme_font_size_override("font_size", 13)
 	hint.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
 	hint.add_theme_constant_override("outline_size", 4)
@@ -480,6 +489,11 @@ func _process(delta: float) -> void:
 		streamer.radius = 1100.0
 		traffic.player = walker.global_position if walker.vehicle == null else Vector3(1e9, 0, 1e9)
 		ui.prompt.text = walker.prompt
+		var doing := "foot"
+		if walker.vehicle != null:
+			var k: String = walker.vehicle.kind
+			doing = "car" if k == "canta" else (k if HINTS.has(k) else "ride")
+		ui.walk_hint.text = HINTS[doing]
 		ui.prompt.visible = walker.prompt != ""
 		var n: String = streamer.nearest_name(focus)
 		if n != "":
