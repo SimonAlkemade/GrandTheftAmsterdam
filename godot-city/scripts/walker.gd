@@ -149,8 +149,10 @@ func _physics_process(delta: float) -> void:
 	if vehicle != null:
 		if vehicle.kind == "boat":
 			_steer_boat(delta)
-		elif DRIVE.has(vehicle.kind):
+		elif vehicle.get("driver", false) and vehicle.has("body"):
 			_drive(delta)
+		elif vehicle.get("driven", false):
+			_drive_tram()
 		else:
 			_ride()
 		prompt = "E  get out"
@@ -160,6 +162,8 @@ func _physics_process(delta: float) -> void:
 	var here := Vector2(global_position.x, global_position.z)
 	var near: Dictionary = traffic.nearest(here, ENTER_RANGE) if traffic else {}
 	prompt = "" if near.is_empty() else {"car": "E  drive this car", "bus": "E  ride the bus", "tram": "E  ride the tram", "bike": "E  ride this bike", "canta": "E  drive this Canta"}[near.kind]
+	if not near.is_empty() and _at_cab(near, here):
+		prompt = "E  drive the bus" if near.kind == "bus" else "E  drive the tram"
 	if prompt == "" and boats and not boats.nearest(here, BOARD_RANGE).is_empty():
 		prompt = "E  take the boat"
 	if prompt == "" and Engine.get_physics_frames() % 6 == 0:
@@ -296,7 +300,11 @@ func _get_in() -> void:
 	body.visible = false
 	speed = 0.0
 	state = "idle"
-	if DRIVE.has(v.kind):
+	if v.kind == "tram" and _at_cab(v, here):
+		v.driven = true                  # at the controls: you drive it along its tracks
+		v.rider = true
+		_ride()
+	elif DRIVE.has(v.kind) and (v.kind != "bus" or v.has("body") or _at_cab(v, here)):
 		v.driver = true
 		v.parked = false
 		if not v.has("body"):
@@ -314,6 +322,18 @@ func _get_in() -> void:
 	_mouse_idle = 10.0
 
 
+# By the driver's door of a bus or tram (its front few metres): E drives it
+# rather than riding along. Elsewhere along it, E gets you a seat.
+func _at_cab(v: Dictionary, here: Vector2) -> bool:
+	if v.kind != "bus" and v.kind != "tram":
+		return false
+	var n: Node3D = v.parts[0][0]       # the front section
+	var f := Vector2(-sin(n.rotation.y), -cos(n.rotation.y))
+	var half: float = v.parts[0][2] / 2.0
+	var cab := Vector2(n.position.x, n.position.z) + f * (half - 2.0)
+	return cab.distance_to(here) < 4.0
+
+
 # From here on a traffic vehicle is a real one: sprung wheels on the street,
 # keeping its speed if `moving`. It leaves its route for good.
 func _physical(v: Dictionary, moving: bool) -> VehicleBody3D:
@@ -329,30 +349,52 @@ func _physical(v: Dictionary, moving: bool) -> VehicleBody3D:
 	return b
 
 
-# GTA rules: a car or Canta you are about to hit stops being scenery on rails
-# and becomes a real car just before you hit it, so the crash pushes, spins or
-# shunts it. (Buses and trams stay on their rails, like the walls they are.)
-func _knock_traffic(b: VehicleBody3D) -> void:
-	var me := Vector2(b.global_position.x, b.global_position.z)
-	var mv := Vector2(b.linear_velocity.x, b.linear_velocity.z)
+# Where a driven body's front bumper is (`me` for _knock_traffic).
+func _front_of(b: VehicleBody3D, kind: String) -> Vector2:
+	var f: Vector3 = b.global_transform.basis.z           # the body drives along +Z
+	var half: float = DRIVE[kind].box.z / 2.0
+	return Vector2(b.global_position.x + f.x * (half - 0.8), b.global_position.z + f.z * (half - 0.8))
+
+
+# GTA rules: a car, Canta or bus you are about to hit stops being scenery on
+# rails and becomes a real one just before you hit it, so the crash pushes,
+# spins or shunts it; a cyclist goes down. (Trams stay on their rails.) `me`
+# is your front, `mv` your velocity.
+func _knock_traffic(me: Vector2, mv: Vector2) -> void:
 	if mv.length() < 2.0:
 		return
 	for v in traffic.vehicles:
-		if v == vehicle or v.has("body") or not (v.kind == "car" or v.kind == "canta"):
+		if v == vehicle or v.has("body") or not (v.kind == "car" or v.kind == "canta" or v.kind == "bus" or v.kind == "bike"):
 			continue
 		var n: Node3D = v.parts[0][0]
 		var at := Vector2(n.position.x, n.position.z)
 		var gap := at.distance_to(me)
-		if gap > 7.5:
+		if gap > (9.0 if v.kind == "bus" else 7.5):
+			continue
+		if v.kind == "bike":
+			if gap < 2.6 and not v.get("fallen", false):
+				_fell(v)
 			continue
 		var tv := Vector2(-sin(n.rotation.y), -cos(n.rotation.y)) * float(v.speed)
 		var closing := (mv - tv).dot((at - me) / maxf(gap, 0.01))
-		if closing > 1.5 and gap < 3.2 + closing * 0.12:
+		if closing > 1.5 and gap < (6.4 if v.kind == "bus" else 2.4) + closing * 0.12:
 			var hit := _physical(v, true)
 			for w in hit.get_children():   # its driver stands on the brake: it skids to a stop
 				if w is VehicleWheel3D: (w as VehicleWheel3D).brake = 5.0
 			v.parked = true                # off its route: it goes where the crash sends it
 			v.knocked = true
+
+
+# A cyclist you hit goes down: the bike falls over, rider and all, and stays.
+func _fell(v: Dictionary) -> void:
+	v.fallen = true
+	v.parked = true
+	v.speed = 0.0
+	var rig: Node3D = v.parts[0][0]
+	var side := 1.0 if randf() < 0.5 else -1.0
+	var t := rig.create_tween()
+	t.tween_property(rig, "rotation:z", side * 1.45, 0.45).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	t.parallel().tween_property(rig, "position:y", rig.position.y + 0.15, 0.45)
 
 
 func _get_out() -> void:
@@ -362,7 +404,7 @@ func _get_out() -> void:
 	if v.kind == "boat":
 		_leave_boat(v)
 		return
-	if DRIVE.has(v.kind):
+	if v.get("driver", false) and v.has("body"):
 		v.driver = false
 		v.parked = true                  # it stays where you left it, handbrake on
 		v.speed = 0.0
@@ -373,6 +415,7 @@ func _get_out() -> void:
 			v.rig.rotation.z = 0.0
 	else:
 		v.rider = false
+		v.driven = false                 # a tram you drove goes on with its own driver
 	# Step out on the kerb side, or the other side if that is a wall or a canal.
 	var c := Vector2(global_position.x, global_position.z)
 	var f := Vector2(-sin(heading), -cos(heading))
@@ -401,7 +444,7 @@ func _drive(dt: float) -> void:
 	var p := b.global_position
 	var sunk := p.y < WATER_Y + 0.2       # it went into a canal: no more driving
 	if vehicle.kind != "bike":
-		_knock_traffic(b)
+		_knock_traffic(_front_of(b, vehicle.kind), Vector2(b.linear_velocity.x, b.linear_velocity.z))
 	car_speed = VPhys.drive(b, vehicle.kind, 0.0 if sunk else throttle, steer, Input.is_physical_key_pressed(KEY_SPACE),
 		Input.is_physical_key_pressed(KEY_SHIFT), dt)
 	b.linear_damp = 2.5 if sunk else 0.0
@@ -482,6 +525,25 @@ func _ground_y(p: Vector3) -> float:
 	var q := PhysicsRayQueryParameters3D.create(Vector3(p.x, 6.0, p.z), Vector3(p.x, -4.0, p.z), VPhys.GROUND_LAYER)
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	return hit.position.y if not hit.is_empty() else 0.09
+
+
+# At a tram's controls: W takes power, S brakes, Space is the emergency brake,
+# A/D choose the branch at the next set of points (Traffic does the physics:
+# a tram is on its rails). You stand in the front cab.
+func _drive_tram() -> void:
+	var key := func(k: Key, alt: Key) -> float:
+		return 1.0 if Input.is_physical_key_pressed(k) or Input.is_physical_key_pressed(alt) else 0.0
+	vehicle.throttle = key.call(KEY_W, KEY_UP) - key.call(KEY_S, KEY_DOWN)
+	vehicle.steer = key.call(KEY_A, KEY_LEFT) - key.call(KEY_D, KEY_RIGHT)
+	vehicle.ebrake = Input.is_physical_key_pressed(KEY_SPACE)
+	_ride()
+	if vehicle == null:
+		return
+	var n: Node3D = vehicle.parts[0][0]
+	global_position = Vector3(n.position.x, 0.0, n.position.z)
+	car_speed = vehicle.speed
+	var f := Vector2(-sin(n.rotation.y), -cos(n.rotation.y))
+	_knock_traffic(Vector2(n.position.x, n.position.z) + f * 4.0, f * float(vehicle.speed))   # 35 tonnes do not stop for a car
 
 
 # As a passenger: sit in the middle of the bus or tram as it drives its route.

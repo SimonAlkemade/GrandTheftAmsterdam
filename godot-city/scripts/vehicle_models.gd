@@ -89,9 +89,9 @@ static func solid(n: Node3D, size: Vector3, y: float) -> void:
 	n.add_child(b)
 
 
-## Turn a vehicle's wheels (children named wheel_*) for the distance it covered.
+## Turn a vehicle's wheels (children named wheel...) for the distance it covered.
 static func spin_wheels(n: Node3D, distance: float, radius: float) -> void:
-	for w in n.find_children("wheel_*", "", true, false):
+	for w in n.find_children("wheel*", "", true, false):
 		(w as Node3D).rotation.x -= distance / radius
 
 

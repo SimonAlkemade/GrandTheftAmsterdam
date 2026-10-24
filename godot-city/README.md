@@ -120,9 +120,37 @@ Cars and Cantas handle the GTA way:
   brakes, so it skids to a stop where the crash left it. Buses and trams stay
   on their rails.
 
+A GVB bus is a real vehicle too: E at its front door takes the wheel (E
+further back still gets you a seat). It is 12 tonnes on air suspension: 0-50
+km/h in about 8 s, 70 km/h flat out, stops from 50 in about 16 m, leans in a
+corner, and shoves a car it hits a good 5 m.
+
 `tests/car_test.gd` measures all of it on a flat test ground:
 
-    godot --headless --path godot-city --script tests/car_test.gd [-- --kind=canta]
+    godot --headless --path godot-city --script tests/car_test.gd [-- --kind=canta|bus]
+
+### Trams
+
+E at a tram's front cab puts you at its controls. A tram stays on its rails,
+so its physics is along them: 35 tonnes, up to 1.3 m/s² of traction fading
+towards 70 km/h, **W** power, **S** the service brake (50 km/h to a stop in
+about 70 m), **Space** the emergency brake (about 34 m), and with the power off
+it coasts on and on. **A/D** set the points: at the next junction it takes the
+leftmost or rightmost branch (otherwise the straightest). The three sections
+follow the front round the curves, and a car in its way is shoved aside.
+
+### The traffic on its springs
+
+Every car, Canta, bus and tram near you rides on springs: a damped spring per
+axis, driven by its real acceleration along and across, so it dips its nose
+braking for a bend (about 4°), squats pulling away, rolls out of a corner
+(about 4° for a car, more for a bus, hardly at all for a tram) and settles.
+Cyclists lean into their turns by the angle that balances them. Car and bus
+wheels turn. A cyclist you hit goes down, bike and all.
+`tests/traffic_test.gd` checks the springs, the lean and the tram's
+traction, brakes, coasting and points on a test layout:
+
+    godot --headless --path godot-city --script tests/traffic_test.gd
 
 ## Traffic
 

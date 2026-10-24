@@ -38,6 +38,12 @@ const SPEC := {
 		"engine": 1300.0, "brake": 10.0, "steer": 0.62, "steer_fast": 0.15, "top": 13.5, "rev": 3.0, "spring": 38.0, "travel": 0.13,
 		"damp_c": 2.2, "damp_r": 2.8, "grip": 2.4, "grip_rear": 2.2, "grip_hand": 0.95, "com": 0.25,
 		"downforce": 0.3, "drag": 0.35, "anti_roll": 5500.0, "kick": 220.0},
+	# A GVB city bus: 12 tonnes on air suspension, slow to get going, long to
+	# stop, and it leans in a corner.
+	"bus": {"mass": 12000.0, "r": 0.5, "track": 1.1, "axles": [-3.9, 3.2], "box": Vector3(2.55, 2.9, 12.0), "box_y": 1.75,
+		"engine": 16000.0, "brake": 260.0, "steer": 0.62, "steer_fast": 0.1, "top": 30.0, "rev": 3.0, "spring": 32.0, "travel": 0.25,
+		"damp_c": 2.0, "damp_r": 2.4, "grip": 3.0, "grip_rear": 3.0, "grip_hand": 2.4, "com": 0.9,
+		"downforce": 0.0, "drag": 1.6, "anti_roll": 900000.0, "kick": 0.0},
 	"bike": {"mass": 95.0, "r": 0.355, "track": 0.0, "axles": [-0.58, 0.56], "box": Vector3(0.5, 0.7, 1.5), "box_y": 0.95,
 		"engine": 420.0, "boost": 680.0, "brake": 4.0, "steer": 0.5, "top": 5.5, "top_boost": 8.5, "rev": 1.0, "spring": 150.0,
 		"travel": 0.1, "damp_c": 8.0, "damp_r": 10.0, "grip": 1.6, "com": 0.55},   # the box clears the hubs

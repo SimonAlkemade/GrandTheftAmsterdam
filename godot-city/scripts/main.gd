@@ -7,7 +7,7 @@ extends Node3D
 ##   Map:     drag to pan, right-drag to rotate, wheel/pinch to zoom.
 ## Test arguments (after `--`): --shot=out.png --view=map|tram|walk --hour=17
 ##   --wait=12 --run (walk mode: hold W and Shift, then turn, to test running)
-##   --vehicle=car|canta|bike|rack|bus|tram|boat|swim|damrak (get in, drive, get out)
+##   --vehicle=car|canta|bike|rack|bus|tram|busdrive|tramdrive|boat|swim|damrak (get in, drive, get out)
 
 const Materials := preload("res://scripts/materials.gd")
 const Streamer := preload("res://scripts/city_streamer.gd")
@@ -44,6 +44,7 @@ const HINTS := {
 	"car": "W  drive     S  brake / reverse     A D  steer     Space  handbrake     E  get out\nIn the air or on its side: A D roll it, W S tip it     Mouse  look     M  map",
 	"bike": "W  pedal     S  back     A D  steer     Shift  pedal hard     Space  brake     E  get off\nMouse  look     M  map",
 	"boat": "W  throttle     S  astern     A D  outboard     Shift  full power     E  get off\nMouse  look     M  map",
+	"tram": "W  power     S  brake     Space  emergency brake     A D  left or right at the next points     E  get off\nMouse  look     M  map",
 	"ride": "E  get off\nMouse  look     M  map",
 }
 # The Damrak basin by the Beurs, where its water comes nearest the Dam: a boat
@@ -492,7 +493,10 @@ func _process(delta: float) -> void:
 		var doing := "foot"
 		if walker.vehicle != null:
 			var k: String = walker.vehicle.kind
-			doing = "car" if k == "canta" else (k if HINTS.has(k) else "ride")
+			if walker.vehicle.get("driven", false): doing = "tram"
+			elif k == "boat" or k == "bike": doing = k
+			elif walker.vehicle.get("driver", false): doing = "car"   # a car, Canta or bus at the wheel
+			else: doing = "ride"
 		ui.walk_hint.text = HINTS[doing]
 		ui.prompt.visible = walker.prompt != ""
 		var n: String = streamer.nearest_name(focus)
@@ -619,14 +623,16 @@ func _test_vehicle(kind: String) -> void:
 		print("veh: %s next to a boat %.0f m from the start, state=%s" % [kind, best.pos.distance_to(here), walker.state])
 		_veh_step = 1; _veh_t = 0.0
 	elif _veh_step == 0 and _veh_t > 1.0:
+		var drive_cab := kind.ends_with("drive")        # busdrive, tramdrive: at the driver's door
+		var want := kind.trim_suffix("drive")
 		var best = null
 		for v in traffic.vehicles:
-			if v.kind == kind and (best == null or v.pos.distance_to(Vector2(walker.global_position.x, walker.global_position.z)) < best.pos.distance_to(Vector2(walker.global_position.x, walker.global_position.z))):
+			if v.kind == want and (best == null or v.pos.distance_to(Vector2(walker.global_position.x, walker.global_position.z)) < best.pos.distance_to(Vector2(walker.global_position.x, walker.global_position.z))):
 				best = v
 		if best == null:
 			return
 		_veh_target = best
-		_beside(best)
+		_beside(best, drive_cab)
 		walker.cam_yaw = best.parts[0][0].rotation.y + PI / 2
 		print("veh: next to a %s, prompt in a moment" % kind)
 		_veh_step = 1; _veh_t = 0.0
@@ -635,7 +641,7 @@ func _test_vehicle(kind: String) -> void:
 		_rack_shot = true
 	elif _veh_step == 1 and _veh_t > 0.5 and (kind != "rack" or _rack_shot):
 		if _veh_target != null:
-			_beside(_veh_target)         # it may have driven on meanwhile
+			_beside(_veh_target, kind.ends_with("drive"))   # it may have driven on meanwhile
 		print("veh: prompt='%s'" % walker.prompt)
 		press.call(KEY_E); press.call(KEY_E, false)
 		_veh_step = 2; _veh_t = 0.0
@@ -644,6 +650,7 @@ func _test_vehicle(kind: String) -> void:
 			print("veh: FAILED to get in"); _veh_step = 9; return
 		if kind != "bus" and kind != "tram":
 			if _veh_t < 0.6: press.call(KEY_W)
+			if kind == "tramdrive" and _veh_t > 7.0 and _veh_t < 7.3: press.call(KEY_W, false); press.call(KEY_S)
 			if (kind == "bike" or kind == "rack") and _veh_t > 2.0 and _veh_t < 2.3: press.call(KEY_SHIFT)
 			if _veh_t > 4.0 and _veh_t < 4.3: press.call(KEY_A)
 			if _veh_t > 5.5 and _veh_t < 5.8: press.call(KEY_A, false)
@@ -659,6 +666,8 @@ func _test_vehicle(kind: String) -> void:
 				var e := bt.global_transform.basis.get_euler()
 				physics = " y=%.3f pitch=%.2f° roll=%.2f° rudder=%.2f slide=%.2f" % [bt.global_position.y, rad_to_deg(e.x), rad_to_deg(e.z), bt.rudder,
 					bt.linear_velocity.dot(bt.global_transform.basis.x)]
+			elif walker.vehicle.get("driven", false):   # at a tram's controls
+				physics = " tram %.1f m/s on edge %d" % [walker.vehicle.speed, walker.vehicle.edge]
 			elif walker.vehicle.has("body"):   # the suspension at work: ride height, pitch and roll
 				var b: VehicleBody3D = walker.vehicle.body
 				var e := b.global_transform.basis.get_euler()
@@ -720,11 +729,12 @@ func _test_mission() -> void:
 		_mis_step = 5
 
 
-func _beside(v: Dictionary) -> void:
-	var n: Node3D = v.parts[v.parts.size() / 2][0]
+func _beside(v: Dictionary, cab := false) -> void:
+	var n: Node3D = v.parts[0 if cab else v.parts.size() / 2][0]
 	var f := Vector2(-sin(n.rotation.y), -cos(n.rotation.y))
 	var side := Vector2(-f.y, f.x) * 2.2
-	walker.global_position = Vector3(n.position.x + side.x, 0.0, n.position.z + side.y)
+	var along := f * (float(v.parts[0][2]) / 2.0 - 2.0) if cab else Vector2.ZERO
+	walker.global_position = Vector3(n.position.x + side.x + along.x, 0.0, n.position.z + side.y + along.y)
 
 
 func _thousands(n: int) -> String:

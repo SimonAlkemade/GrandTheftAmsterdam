@@ -21,6 +21,14 @@ const KINDS := {
 	"tram": {"len": 29.8, "max": 11.5, "lane": 0.0, "y": 0.13, "accel": 1.1},
 }
 const TRAM_SECTIONS := [9.6, 9.6, 9.6]
+# How each kind's body moves on its springs: radians of pitch per m/s^2 of
+# braking or acceleration, radians of roll per m/s^2 of cornering, and the
+# spring's natural frequency (rad/s). A bus rolls a lot, a tram hardly at all.
+# Cyclists lean into the turn instead, by the angle that balances it.
+const SPRINGS := {
+	"car": [0.006, 0.015, 9.0], "canta": [0.009, 0.02, 10.0], "bus": [0.005, 0.02, 6.0], "tram": [0.0015, 0.005, 7.0],
+}
+const SPRUNG_NEAR := 160.0        # metres from you within which bodies move on their springs
 const CAR_COLORS := ["1b1b1b", "f2f2f2", "8a8f94", "2c4a6e", "7a1e1e", "2f5d3a", "c9b48a", "d9d4c7", "0f2a4a", "b3261e", "4a4f55", "e8e8e8"]
 
 var target := {"car": 70, "bus": 7, "tram": 9, "bike": 35, "canta": 8}
@@ -220,6 +228,20 @@ func _next(v: Dictionary) -> bool:
 		options.append([x[0], ndir, turn])
 	if options.is_empty():
 		return false
+	if v.get("driven", false):
+		# At the points you choose: A the leftmost branch, D the rightmost, else
+		# the straightest. (A left turn has a negative cross product here.)
+		var steer: float = v.get("steer", 0.0)
+		var best = options[0]
+		for o in options:
+			var side: float = heading.cross((_at(edges[o[0]], 0.0 if o[1] == 1 else edges[o[0]].len)[1] * o[1]) as Vector2)
+			o.append(side)
+		for o in options:
+			if steer > 0.0 and o[3] < best[3]: best = o
+			elif steer < 0.0 and o[3] > best[3]: best = o
+			elif steer == 0.0 and o[2] > best[2]: best = o
+		v.edge = best[0]; v.dir = best[1]
+		return true
 	var total := 0.0
 	for o in options:
 		o[2] = pow(maxf(o[2] + 1.05, 0.05), 3.0)    # straight on is likely, U-turns rare
@@ -294,7 +316,10 @@ func _drive(v: Dictionary, dt: float) -> void:
 			if v.dwell <= 0.0:
 				v.stop_in = _rng.randf_range(250, 500)
 	var acc: float = spec.accel if want > v.speed else spec.accel * 2.5
-	v.speed = move_toward(v.speed, want, acc * dt)
+	if v.get("driven", false):
+		v.speed = _tram_speed(v, dt)    # you are at the controls: your power and brakes, not the timetable
+	else:
+		v.speed = move_toward(v.speed, want, acc * dt)
 	# Stuck behind something that is stuck behind us: one of us goes first.
 	if v.speed < 0.2 and want < 0.2 and v.dwell <= 0.0:
 		v.stuck += dt
@@ -332,12 +357,77 @@ func _drive(v: Dictionary, dt: float) -> void:
 			y = street_y.call(mid, spec.y)
 			var ya: float = street_y.call(a, spec.y); var yb: float = street_y.call(b, spec.y)
 			pitch = atan2(ya - yb, maxf(a.distance_to(b), 0.5))
+		var yaw := atan2(-dir.x, -dir.y)
+		if part == v.parts[0]:
+			# Its acceleration along and across (from how its body turns, which
+			# follows the trail, rather than the lane's corners), on its springs.
+			var last_speed: float = v.get("last_speed", v.speed)
+			var last_yaw: float = v.get("body_yaw", yaw)
+			_springs(v, (v.speed - last_speed) / dt, v.speed * wrapf(yaw - last_yaw, -PI, PI) / dt, dt)
+			v.last_speed = v.speed
+			v.body_yaw = yaw
+		var sp: Array = v.get("spring", [0.0, 0.0, 0.0, 0.0])
 		part[0].position = Vector3(mid.x, y, mid.y)
-		part[0].rotation = Vector3(pitch, atan2(-dir.x, -dir.y), 0.0)
+		part[0].rotation = Vector3(pitch + sp[0], yaw, sp[2])
 	if v.kind == "bike":
 		v.parts[0][0].pedal(dt, v.speed)
 	elif v.kind == "canta":
 		Models.spin_wheels(v.parts[0][0], v.speed * dt, 0.22)
+	elif v.kind == "car" or v.kind == "bus":
+		Models.spin_wheels(v.parts[0][0], v.speed * dt, 0.33 if v.kind == "car" else 0.5)
+
+
+# A tram driven by you: 35 tonnes on steel rails. Up to 1.3 m/s^2 of traction
+# (fading towards 70 km/h), 1.4 m/s^2 of service brake, 2.8 of emergency
+# brake, and it rolls on a long way with the power off.
+const TRAM := {"accel": 1.3, "top": 19.5, "brake": 1.4, "emergency": 2.8, "roll": 0.06}
+
+func _tram_speed(v: Dictionary, dt: float) -> float:
+	var s: float = v.speed
+	var throttle: float = v.get("throttle", 0.0)
+	var a := -TRAM.roll - 0.0003 * s * s               # rolling resistance and air
+	if v.get("ebrake", false):
+		a = -TRAM.emergency
+	elif throttle > 0.0:
+		a += TRAM.accel * throttle * clampf(1.0 - pow(s / TRAM.top, 3.0), 0.0, 1.0)
+	elif throttle < 0.0:
+		a = -TRAM.brake
+	v.dwell = 0.0
+	v.stop_in = 1e9                                 # no timetable stops: you stop where you like
+	return maxf(0.0, s + a * dt)
+
+
+# The body on its springs: it dips its nose braking, squats pulling away and
+# rolls out of a corner, then settles (a damped spring per axis, from the
+# vehicle's real acceleration `along` and cornering `across`, m/s^2). A cyclist
+# leans into the turn instead. Only near you: far away nobody sees it.
+func _springs(v: Dictionary, along: float, across: float, dt: float) -> void:
+	if v.pos.distance_to(Vector2(focus.x, focus.z)) > SPRUNG_NEAR or dt <= 0.0:
+		v.spring = [0.0, 0.0, 0.0, 0.0]
+		return
+	var sp: Array = v.get("spring", [0.0, 0.0, 0.0, 0.0])   # pitch, its rate, roll, its rate
+	# The lane is drawn in straight pieces: smooth the cornering over a few
+	# tenths of a second, as a real body's turn is smooth.
+	across = clampf(across, -5.0, 5.0)
+	v.across = lerpf(float(v.get("across", 0.0)), across, 1.0 - exp(-dt * 5.0))
+	across = v.across
+	if v.kind == "bike":
+		var lean := clampf(atan(across / 9.81), -0.5, 0.5)   # tan(lean) = v * yaw rate / g, into the turn
+		sp[2] = lerpf(sp[2], lean, 1.0 - exp(-dt * 6.0))
+		v.spring = sp
+		return
+	var k: Array = SPRINGS[v.kind]
+	var w: float = k[2]
+	# Braking (along < 0) dips the nose: model -Z is the front, +x rotation lifts it.
+	var aim_pitch: float = clampf(along, -9.0, 6.0) * k[0]
+	# Turning left (across > 0) throws the body right: right side down, -z rotation.
+	var aim_roll: float = -clampf(across, -8.0, 8.0) * k[1]
+	for i in [0, 2]:
+		var aim: float = aim_pitch if i == 0 else aim_roll
+		var acc: float = w * w * (aim - sp[i]) - 2.0 * 0.35 * w * sp[i + 1]
+		sp[i + 1] += acc * dt
+		sp[i] += sp[i + 1] * dt
+	v.spring = sp
 
 
 # The point `back` metres behind the front along the trail.
