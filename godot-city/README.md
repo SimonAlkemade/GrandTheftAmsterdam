@@ -161,8 +161,13 @@ close (you, the vehicle you are in, or another pedestrian) and sidesteps
 early, to its right when the other comes straight at it, so two people
 meeting pass each other; it gives room to anyone already close, slows in a
 crowd, and nobody ever overlaps anyone. Run into one and they stagger.
-`tests/peds_test.gd` checks someone walking at you, two meeting head-on and a
-crowd of 20:
+They watch the traffic too, measuring against each car's, bus's, tram's and
+bike's whole body: they wait at the kerb for one about to cross their way
+(a whole 27 m tram goes by first), hurry sideways out of the path of one
+coming at them, walk round one that is parked, and are never inside one.
+`tests/peds_test.gd` checks someone walking at you, two meeting head-on, a
+crowd of 20, a car crossing, a car coming at someone in the road, a parked bus
+and a passing tram:
 
     godot --headless --path godot-city --script tests/peds_test.gd
 

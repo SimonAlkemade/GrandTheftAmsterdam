@@ -1,11 +1,15 @@
 extends SceneTree
 ## Pedestrians keep their distance: one walking straight at you veers off and
-## walks on, two meeting head-on pass each other, and in a crowd nobody ever
-## overlaps anyone, you included.
+## walks on, two meeting head-on pass each other, in a crowd nobody ever
+## overlaps anyone, you included; and with traffic: they wait for a car to
+## cross their way, hurry out of the path of one coming at them, walk round a
+## parked bus, and let a tram go by, never once inside a vehicle.
 ##     godot --headless --path godot-city --script tests/peds_test.gd
 
 const Walker := preload("res://scripts/walker.gd")
 const Human := preload("res://scripts/human.gd")
+const Traffic := preload("res://scripts/traffic.gd")
+const Models := preload("res://scripts/vehicle_models.gd")
 
 
 # The city as far as pedestrians need it: open street everywhere.
@@ -16,12 +20,17 @@ class OpenStreet:
 
 var _fails := 0
 var w
+var traffic
 var rng := RandomNumberGenerator.new()
 
 
 func _initialize() -> void:
 	w = Walker.new()
 	w.streamer = OpenStreet.new()
+	traffic = Traffic.new()
+	traffic.enabled = false                     # these vehicles are moved by hand below
+	root.add_child(traffic)
+	w.traffic = traffic
 	root.add_child(w)
 	w.global_position = Vector3.ZERO
 	_run.call_deferred()
@@ -96,5 +105,93 @@ func _run() -> void:
 	print("crowd: closest pair %.2f m, closest to you %.2f m" % [worst_pair, worst_you])
 	_check(worst_pair >= Walker.PED_GAP - 0.05, "in a crowd nobody overlaps (closest pair %.2f m)" % worst_pair)
 	_check(worst_you >= Walker.YOU_GAP - 0.05, "and nobody walks into you (closest %.2f m)" % worst_you)
+	_clear()
+	await _vehicles()
 	print("peds test: %d failed" % _fails)
 	quit(1 if _fails else 0)
+
+
+# A vehicle as Traffic keeps one, heading along `dir` (x, z) at `speed`.
+func _vehicle(kind: String, at: Vector2, dir: Vector2, speed: float) -> Dictionary:
+	var root3 := Node3D.new(); traffic.add_child(root3)
+	var v := {"kind": kind, "speed": speed, "pos": at, "parts": [], "node": root3, "parked": speed == 0.0}
+	var yaw := atan2(-dir.x, -dir.y)
+	var lens: Array = Traffic.TRAM_SECTIONS if kind == "tram" else [4.2 if kind == "car" else 12.0]
+	var off := 0.0
+	for L in lens:
+		var n := Node3D.new(); root3.add_child(n)
+		var c: Vector2 = at - dir * (off + float(L) / 2.0)
+		n.position = Vector3(c.x, 0, c.y); n.rotation.y = yaw
+		v.parts.append([n, off, L])
+		off += L + 0.5
+	traffic.vehicles.append(v)
+	return v
+
+
+func _drive(v: Dictionary, dir: Vector2, dt: float) -> void:
+	for part in v.parts:
+		part[0].position += Vector3(dir.x, 0, dir.y) * v.speed * dt
+
+
+# How far a pedestrian is from a vehicle's body (from its side), metres.
+func _gap(p: Dictionary, v: Dictionary) -> float:
+	var best := INF
+	for part in v.parts:
+		var n: Node3D = part[0]
+		var ax: Vector2 = Vector2(-sin(n.rotation.y), -cos(n.rotation.y)) * (float(part[2]) / 2.0)
+		var c := Vector2(n.position.x, n.position.z)
+		best = minf(best, Geometry2D.get_closest_point_to_segment(Vector2(p.pos.x, p.pos.z), c - ax, c + ax).distance_to(Vector2(p.pos.x, p.pos.z)))
+	return best - float(Walker.HALF_WIDTH[v.kind])
+
+
+func _vehicles() -> void:
+	w.global_position = Vector3(0, 0, 60)             # you stand out of the way (but near enough for them to be about)
+	var dt := 1.0 / 60.0
+	# A. A car at 30 km/h along +x crosses where a pedestrian walking north
+	#    (-z) would be: she waits for it, then crosses.
+	var east := Vector2(1, 0)
+	var car := _vehicle("car", Vector2(-30, 0), east, 8.3)
+	var p := _ped(Vector3(0, 0, 6), 0.0)              # heading -Z, across the car's way
+	var closest := INF
+	for i in 60 * 12:
+		w._peds(dt); _drive(car, east, dt)
+		closest = minf(closest, _gap(p, car))
+		await process_frame
+	print("crossing: closest %.2f m from the car's side, ended at z %.1f" % [closest, p.pos.z])
+	_check(closest > 0.7, "she waits for a car to cross her way (closest %.2f m from its side)" % closest)
+	_check(p.pos.z < -3.0, "and then crosses (z %.1f)" % p.pos.z)
+	_clear(); traffic.vehicles.clear()
+	# B. A car comes straight at a pedestrian walking along its road.
+	car = _vehicle("car", Vector2(-40, 0), east, 8.3)
+	p = _ped(Vector3(0, 0, 0.2), -PI / 2)              # heading +x too, slowly, in the lane
+	closest = INF
+	for i in 60 * 10:
+		w._peds(dt); _drive(car, east, dt)
+		closest = minf(closest, _gap(p, car))
+		await process_frame
+	print("in the road: closest %.2f m from the car's side" % closest)
+	_check(closest > 0.25, "he gets out of the way of a car coming at him (closest %.2f m)" % closest)
+	_clear(); traffic.vehicles.clear()
+	# C. A parked bus across a pedestrian's way: round it, never into it.
+	var bus := _vehicle("bus", Vector2(6, 0), east, 0.0)   # its body from x = -6 to 6
+	p = _ped(Vector3(0, 0, 8), 0.0)                    # heading -Z, straight at its middle
+	closest = INF
+	for i in 60 * 30:
+		w._peds(dt)
+		closest = minf(closest, _gap(p, bus))
+		await process_frame
+	print("parked bus: closest %.2f m from its side, ended at %s" % [closest, p.pos.snapped(Vector3.ONE * 0.1)])
+	_check(closest >= Walker.VEHICLE_GAP - 0.05, "never walks into a parked bus (closest %.2f m)" % closest)
+	_check(p.pos.z < -2.0 or absf(p.pos.x) > 7.0, "and finds a way round it")
+	_clear(); traffic.vehicles.clear()
+	# D. A 27 m tram at 40 km/h: wait until all three sections are by.
+	var tram := _vehicle("tram", Vector2(-40, 0), east, 11.0)
+	p = _ped(Vector3(0, 0, 5), 0.0)
+	closest = INF
+	for i in 60 * 12:
+		w._peds(dt); _drive(tram, east, dt)
+		closest = minf(closest, _gap(p, tram))
+		await process_frame
+	print("tram: closest %.2f m from its side, ended at z %.1f" % [closest, p.pos.z])
+	_check(closest > 0.7, "she lets a tram go by (closest %.2f m)" % closest)
+	_check(p.pos.z < -3.0, "and crosses behind it")

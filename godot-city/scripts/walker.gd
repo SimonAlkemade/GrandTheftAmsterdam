@@ -589,10 +589,45 @@ const PED_SPACE := 1.2          # metres within which it backs off from another
 const YOU_SPACE := 2.0          # ... from you
 const PED_GAP := 0.6            # never closer than this to each other
 const YOU_GAP := 0.75           # ... or to you
+# Vehicles: half their width, by kind (a pedestrian keeps this plus a margin
+# from the body of a car, bus, tram or bike, measured along its whole length).
+const HALF_WIDTH := {"car": 0.9, "canta": 0.55, "bus": 1.3, "tram": 1.2, "bike": 0.35}
+const VEHICLE_CLEAR := 1.0      # how far outside a moving vehicle's side a pedestrian wants to be
+const VEHICLE_GAP := 0.3        # never closer than this to its side
+
+
+# The vehicles near you, as segments a pedestrian can measure against: each
+# body section's two ends, its half width and how it moves. Built once a frame.
+func _vehicle_segments() -> Array:
+	var out := []
+	if traffic == null:
+		return out
+	var you := Vector2(global_position.x, global_position.z)
+	for v in traffic.vehicles:
+		if v.pos.distance_to(you) > 110.0 or not HALF_WIDTH.has(v.kind):
+			continue
+		for part in v.parts:
+			if part[2] < 1.0:
+				continue                          # a tram's bellows
+			var n: Node3D = part[0]
+			var c := Vector2(n.global_position.x, n.global_position.z)
+			var axis: Vector2
+			var vel: Vector2
+			if n is RigidBody3D:                  # a real one: knocked, parked or yours
+				var z: Vector3 = n.global_transform.basis.z
+				axis = Vector2(z.x, z.z).normalized()
+				vel = Vector2((n as RigidBody3D).linear_velocity.x, (n as RigidBody3D).linear_velocity.z)
+			else:
+				axis = Vector2(-sin(n.rotation.y), -cos(n.rotation.y))
+				vel = axis * float(v.speed) if not v.get("parked", false) else Vector2.ZERO
+			var half: float = part[2] / 2.0 - 0.2
+			out.append([c - axis * half, c + axis * half, float(HALF_WIDTH[v.kind]), vel])
+	return out
 
 func _peds(delta: float) -> void:
 	var you := Vector2(global_position.x, global_position.z)
 	var your_vel := Vector2(-sin(heading), -cos(heading)) * speed
+	var cars := _vehicle_segments()
 	for p in peds:
 		if p.pos.distance_to(global_position) > 85.0:
 			_place(p, false)
@@ -611,7 +646,9 @@ func _peds(delta: float) -> void:
 			var right := Vector2(-fwd.y, fwd.x)           # the right of the way it walks
 			var push := Vector2.ZERO
 			var nearest := INF
-			var others := [[you, your_vel, YOU_CLEAR, YOU_SPACE, 2.0]]   # where, moving, pass at, room, how strongly
+			var others := []                       # where, moving, pass at, room, how strongly
+			if vehicle == null:
+				others.append([you, your_vel, YOU_CLEAR, YOU_SPACE, 2.0])   # in a vehicle, you are its body below
 			for o in peds:
 				if o != p:
 					others.append([Vector2(o.pos.x, o.pos.z), Vector2(-sin(o.heading), -cos(o.heading)) * float(o.speed), PED_CLEAR, PED_SPACE, 1.0])
@@ -636,12 +673,52 @@ func _peds(delta: float) -> void:
 					push += side * (1.0 - t / LOOK_AHEAD) * (1.0 - miss.length() / o[2]) * o[4] * 1.6
 				if d < o[3] and d > 0.001:
 					push -= rel / d * (1.0 - d / o[3]) * o[4]   # already close: give room
+			# Vehicles: wait at the kerb for one about to cross your way, hurry
+			# out of the path of one coming at you, walk round one that stands.
+			var hurry := 1.0
+			var wait := false
+			for sg in cars:
+				var a: Vector2 = sg[0]; var b: Vector2 = sg[1]
+				var room: float = sg[2] + VEHICLE_CLEAR
+				var vv: Vector2 = sg[3]
+				var c := Geometry2D.get_closest_point_to_segment(me, a, b)
+				var away := me - c
+				var d := away.length()
+				if d > 30.0:
+					continue
+				nearest = minf(nearest, d)
+				if vv.length() < 0.8:
+					# Standing still: an obstacle, passed like a person (on the right).
+					if d < room + 1.5 and (c - me).dot(fwd) > 0.0:
+						var side := right if away.dot(right) >= -0.1 else -right
+						push += side * (1.0 - d / (room + 1.5)) * 2.0
+					if d < room and d > 0.001:
+						push += away / d * (1.0 - d / room) * 2.0
+					continue
+				# Moving: where will the body be, against where you will be?
+				var dir := vv.normalized()
+				var across := Vector2(-dir.y, dir.x)
+				var lat := (me - (a + b) / 2.0).dot(across)    # how far you are from its line
+				var ahead := (me - (a + b) / 2.0).dot(dir) - a.distance_to(b) / 2.0   # how far in front of its nose
+				var t_arrive := ahead / vv.length()
+				var in_path := absf(lat) < room
+				var my_lat := my_vel.dot(across)                  # how fast you are walking across its line
+				if in_path and t_arrive > -a.distance_to(b) / vv.length() - 0.5 and t_arrive < LOOK_AHEAD:
+					# You are in its way: out of it, to the side you are on, quickly.
+					push += across * signf(lat if absf(lat) > 0.05 else 1.0) * 3.0
+					hurry = 1.8
+				elif t_arrive > -a.distance_to(b) / vv.length() - 0.5 and t_arrive < LOOK_AHEAD:
+					# Walking into its way before it has gone by: wait.
+					if signf(my_lat) == -signf(lat) and absf(lat) - absf(my_lat) * (t_arrive + a.distance_to(b) / vv.length() + 0.5) < room:
+						wait = true
 			if push.length() > 0.01:
 				var want := (fwd + push * 1.5).normalized()
 				var aim := atan2(-want.x, -want.y)
 				p.heading += clampf(wrapf(aim - p.heading, -PI, PI), -4.0 * delta, 4.0 * delta)
 			var f := Vector3(-sin(p.heading), 0, -cos(p.heading))
-			var pace: float = p.speed * clampf(nearest / 1.4, 0.35, 1.0)   # slower in a crowd
+			var pace: float = p.speed * clampf(nearest / 1.4, 0.35, 1.0) * hurry   # slower in a crowd
+			if wait:
+				pace = 0.0
 			if _free(p.pos + f * 1.2):
 				p.pos += f * pace * delta
 			else:
@@ -649,7 +726,7 @@ func _peds(delta: float) -> void:
 					var hh: float = p.heading + t
 					if _free(p.pos + Vector3(-sin(hh), 0, -cos(hh)) * 1.2):
 						p.heading = hh; break
-			h.animate(delta, "walk", pace)
+			h.animate(delta, "walk" if pace > 0.05 else "idle", pace)
 	# Nobody overlaps: push pairs apart, and everyone out of your way.
 	for i in peds.size():
 		var a: Dictionary = peds[i]
@@ -666,6 +743,17 @@ func _peds(delta: float) -> void:
 			var n2 := off2.normalized() if off2.length() > 0.001 else Vector3(1, 0, 0)
 			a.pos += n2 * (YOU_GAP - off2.length())
 			if speed > 3.5 and a.stag <= 0.0: a.stag = 0.9      # run into them and they stagger
+	# ... and nobody stands inside a car, bus, tram or bike.
+	for a in peds:
+		for sg in cars:
+			var me := Vector2(a.pos.x, a.pos.z)
+			var c := Geometry2D.get_closest_point_to_segment(me, sg[0], sg[1])
+			var d := me.distance_to(c)
+			var keep: float = sg[2] + VEHICLE_GAP
+			if d < keep:
+				var n3 := (me - c) / d if d > 0.001 else Vector2(1, 0)
+				var to := c + n3 * keep
+				a.pos = Vector3(to.x, a.pos.y, to.y)
 	for p in peds:
 		var gy = _ground(p.pos)
 		p.h.position = Vector3(p.pos.x, gy if gy != null else 0.0, p.pos.z)
