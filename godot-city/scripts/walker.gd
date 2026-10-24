@@ -162,6 +162,8 @@ func _physics_process(delta: float) -> void:
 	var here := Vector2(global_position.x, global_position.z)
 	var near: Dictionary = traffic.nearest(here, ENTER_RANGE) if traffic else {}
 	prompt = "" if near.is_empty() else {"car": "E  drive this car", "bus": "E  ride the bus", "tram": "E  ride the tram", "bike": "E  ride this bike", "canta": "E  drive this Canta"}[near.kind]
+	if near.get("line") != null:            # which tram: "E  ride tram 5 to Amstelveen Binnenhof"
+		prompt = "E  ride tram %s to %s" % [near.line[0], near.line[1]]
 	if not near.is_empty() and _at_cab(near, here):
 		prompt = "E  drive the bus" if near.kind == "bus" else "E  drive the tram"
 	if prompt == "" and boats and not boats.nearest(here, BOARD_RANGE).is_empty():

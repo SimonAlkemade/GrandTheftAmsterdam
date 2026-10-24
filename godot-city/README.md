@@ -137,6 +137,13 @@ high-floor body over a dark skirt and visible bogies, separate windows between
 yellow pillars, folding doors on the right-hand side only, a flat cab with a
 split windscreen, the destination box and line number above it and round
 headlights, a diamond pantograph on the roof.
+Each tram runs under a line number and destination from the GVB network of
+the 1990s (1 Osdorp, 2 Nieuw Sloten, 5 Amstelveen Binnenhof, 13 Geuzenveld,
+25 President Kennedylaan, and back to Centraal Station...): the number black
+on a lit white box and the destination in amber letters over the windscreen,
+both again on a side sign by the front door, the number in the back window,
+and E next to it says which tram it is. (The traffic follows the real tracks,
+not those lines' routes.)
 
 E at a tram's front cab puts you at its controls. A tram stays on its rails,
 so its physics is along them: 35 tonnes, up to 1.3 m/s² of traction fading

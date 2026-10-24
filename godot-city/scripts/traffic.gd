@@ -21,6 +21,16 @@ const KINDS := {
 	"tram": {"len": 26.8, "max": 11.5, "lane": 0.0, "y": 0.13, "accel": 1.1},
 }
 const TRAM_SECTIONS := [9.6, 6.6, 9.6]      # a GVB 11G/12G: 27 m in three sections
+# The lines it might run, with a terminus each way (the GVB network of the
+# 1990s, roughly): each tram shows one line and one end of it. The traffic
+# follows the real tracks, not these routes.
+const TRAM_LINES := [
+	["1", "Osdorp"], ["1", "Centraal Station"], ["2", "Nieuw Sloten"], ["2", "Centraal Station"],
+	["4", "Station RAI"], ["4", "Centraal Station"], ["5", "Amstelveen Binnenhof"], ["5", "Centraal Station"],
+	["9", "Watergraafsmeer"], ["9", "Centraal Station"], ["13", "Geuzenveld"], ["13", "Centraal Station"],
+	["16", "VU Ziekenhuis"], ["16", "Centraal Station"], ["17", "Osdorp"], ["17", "Centraal Station"],
+	["24", "VU Ziekenhuis"], ["24", "Centraal Station"], ["25", "President Kennedylaan"], ["25", "Centraal Station"],
+]
 # Its doors (on the right-hand side), metres from each section's middle.
 const TRAM_DOORS := [[-2.6, 2.9], [0.0], [-2.9, 2.6]]
 # How each kind's body moves on its springs: radians of pitch per m/s^2 of
@@ -191,10 +201,11 @@ func _build_model(v: Dictionary) -> void:
 			rig.add_rider(_rng)
 			root.add_child(rig); v.parts.append([rig, 0.0, 1.8])
 		"tram":
+			v.line = TRAM_LINES[_rng.randi() % TRAM_LINES.size()]
 			var off := 0.0
 			for k in TRAM_SECTIONS.size():
 				var cab := -1 if k == 0 else (1 if k == TRAM_SECTIONS.size() - 1 else 0)
-				var sec: Node3D = Models.tram_section(TRAM_SECTIONS[k], cab, TRAM_DOORS[k])
+				var sec: Node3D = Models.tram_section(TRAM_SECTIONS[k], cab, TRAM_DOORS[k], v.line)
 				Models.solid(sec, Vector3(2.4, 3.0, TRAM_SECTIONS[k]), 1.7)
 				root.add_child(sec)
 				v.parts.append([sec, off, TRAM_SECTIONS[k]])

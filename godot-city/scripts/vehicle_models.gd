@@ -118,8 +118,10 @@ static func bus() -> Node3D:
 # section (its flat cab with a split windscreen, the destination box and the
 # line number, round headlights), 1 = the rear (a back window and tail lights),
 # 0 = the middle. `doors` = where its doors are, metres from its middle.
+# `sign` = [line number, destination]: the front shows both over the
+# windscreen and on a side sign by the front door, the back its line number.
 # Forward is -Z.
-static func tram_section(length: float, cab: int, doors: Array = []) -> Node3D:
+static func tram_section(length: float, cab: int, doors: Array = [], sign: Array = []) -> Node3D:
 	var n := Node3D.new()
 	var yellow := mat("tram_yellow", Color("e2ac14"), 0.45, 0.05)
 	var glass := mat("tram_glass", Color("10171b"), 0.08, 0.7)
@@ -165,8 +167,17 @@ static func tram_section(length: float, cab: int, doors: Array = []) -> Node3D:
 			var ws := box(n, Vector3(1.06, 1.15, 0.04), Vector3(x, 2.15, z0 - 0.02), glass)
 			ws.rotation.x = -0.07                                                     # raked back a touch
 		box(n, Vector3(0.08, 1.2, 0.05), Vector3(0, 2.15, z0 - 0.03), frame)       # the pillar between them
-		box(n, Vector3(1.55, 0.34, 0.06), Vector3(0.28, 2.98, z0 - 0.03), mat("dest", Color("2a1800"), 0.4, 0.0, Color("ffb020")))
+		var blind := mat("tram_blind", Color("0c0a08"), 0.6)
+		box(n, Vector3(1.55, 0.34, 0.06), Vector3(0.28, 2.98, z0 - 0.03), blind)
 		box(n, Vector3(0.42, 0.34, 0.06), Vector3(-0.82, 2.98, z0 - 0.03), mat("tram_line", Color("e8e8e0"), 0.4, 0.0, Color("fff6e0")))
+		if sign.size() == 2:
+			# The line number, black on its lit white box; the destination in
+			# glowing amber letters on the dark blind; and again on the side.
+			sign_text(n, str(sign[0]), Vector3(-0.82, 2.98, z0 - 0.07), PI, 0.36, 0.24, Color("111111"), true)
+			sign_text(n, str(sign[1]), Vector3(0.28, 2.98, z0 - 0.07), PI, 1.45, 0.2, Color("ffb020"), false)
+			var sz: float = doors[0] - 1.25 if doors.size() else z0 + 1.6
+			box(n, Vector3(0.04, 0.28, 1.9), Vector3(w / 2 + 0.02, 2.92, sz), blind)
+			sign_text(n, "%s  %s" % [sign[0], sign[1]], Vector3(w / 2 + 0.05, 2.92, sz), PI / 2, 1.8, 0.17, Color("ffb020"), false)
 		var lamp := CylinderMesh.new(); lamp.top_radius = 0.11; lamp.bottom_radius = 0.11; lamp.height = 0.06
 		for x in [-0.78, 0.78]:
 			var mi := MeshInstance3D.new(); mi.mesh = lamp
@@ -189,11 +200,40 @@ static func tram_section(length: float, cab: int, doors: Array = []) -> Node3D:
 	elif cab == 1:
 		var z1 := length / 2.0
 		box(n, Vector3(1.7, 0.95, 0.04), Vector3(0, 2.2, z1 + 0.02), glass)        # the back window
+		if sign.size() == 2:                                                        # its line number in the back window
+			box(n, Vector3(0.42, 0.34, 0.03), Vector3(0.55, 2.45, z1 + 0.045), mat("tram_line", Color("e8e8e0"), 0.4, 0.0, Color("fff6e0")))
+			sign_text(n, str(sign[0]), Vector3(0.55, 2.45, z1 + 0.07), 0.0, 0.36, 0.24, Color("111111"), true)
 		for x in [-0.85, 0.85]:
 			box(n, Vector3(0.22, 0.14, 0.05), Vector3(x, 1.05, z1 + 0.03), mat("taillight", Color("5a0a0a"), 0.4, 0.0, Color("ff2a1a")))
 		box(n, Vector3(w - 0.1, 0.22, 0.14), Vector3(0, 0.62, z1 + 0.06), dark)
 	wheels(n, 0.75, [-length * 0.28, length * 0.28] if length > 8.0 else [0.0], 0.34)
 	return n
+
+
+## Words on a sign: a Label3D on the sign's face, facing `yaw` (0 = +Z), its
+## letters `height` m tall but shrunk to fit `width` m; unlit, so a lit sign
+## reads at night. `bold` for a line number.
+static func sign_text(parent: Node3D, text: String, pos: Vector3, yaw: float, width: float, height: float, color: Color, bold: bool) -> Label3D:
+	var l := Label3D.new()
+	l.text = text
+	l.font_size = 64
+	l.outline_size = 0
+	l.modulate = color
+	l.double_sided = false
+	l.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	if bold:
+		var f := SystemFont.new(); f.font_weight = 800
+		l.font = f
+	# A letter is about 0.55 of the font size wide: shrink long names to fit.
+	var per_px := height / 64.0
+	var wide := text.length() * 0.56 * 64.0 * per_px
+	if wide > width:
+		per_px *= width / wide
+	l.pixel_size = per_px
+	l.position = pos
+	l.rotation.y = yaw
+	parent.add_child(l)
+	return l
 
 
 ## The bellows between two sections, standing on the rails as they do.
