@@ -51,6 +51,12 @@ const BIKE_COLORS := ["111214", "111214", "111214", "111214", "1d2a3a", "6b1e1e"
 var spawn_radius := 420.0
 var focus := Vector3.ZERO
 var player := Vector3(1e9, 0, 1e9)  # the walker, as an obstacle
+var pedestrians: Array = []         # [where, walking velocity] of the people on foot near you (Walker sets it)
+# How far either side of a vehicle's line a pedestrian makes it brake: its
+# half width and a little, so people on the pavement beside it do not.
+const PED_ROOM := {"car": 1.8, "canta": 1.4, "bus": 2.2, "tram": 2.1, "bike": 1.1}
+const PED_SEES := 25.0              # metres ahead a driver watches for people
+const PED_STOP := 3.0               # ... and stops this far short of them
 var enabled := true
 var street_y: Callable          # (p, base height) -> height: bridges hump over the canals
 
@@ -315,6 +321,18 @@ func _drive(v: Dictionary, dt: float) -> void:
 	var pp: Vector2 = Vector2(player.x, player.z) - v.pos
 	if pp.dot(fwd) > 0.0 and pp.dot(fwd) < 25.0 and absf(pp.cross(fwd)) < 2.6:
 		gap = minf(gap, pp.dot(fwd) - 3.0)
+	# And for pedestrians: anyone in its way ahead, or walking into it before
+	# it gets there (looking a second and a half ahead), it stops short of.
+	var room: float = PED_ROOM[v.kind]
+	for q in pedestrians:
+		var rel: Vector2 = q[0] - v.pos
+		var along := rel.dot(fwd)
+		if along <= 0.0 or along > PED_SEES:
+			continue
+		var lat := rel.cross(fwd)
+		var then := lat + (q[1] as Vector2).cross(fwd) * minf(along / maxf(v.speed, 1.0), 1.5)
+		if absf(lat) < room or (absf(lat) < 6.0 and (absf(then) < room or signf(then) != signf(lat))):
+			gap = minf(gap, along - PED_STOP)
 	want = minf(want, maxf(0.0, (gap - 1.0) / 1.3))
 	# Buses and trams stop now and then, as if at a stop.
 	if v.kind == "bus" or v.kind == "tram":

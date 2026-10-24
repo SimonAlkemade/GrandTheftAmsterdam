@@ -165,6 +165,11 @@ They watch the traffic too, measuring against each car's, bus's, tram's and
 bike's whole body: they wait at the kerb for one about to cross their way
 (a whole 27 m tram goes by first), hurry sideways out of the path of one
 coming at them, walk round one that is parked, and are never inside one.
+Drivers brake for them in turn: every car, Canta, bus, tram and cyclist
+watches 25 m ahead and stops about 3 m short of anyone standing in its way or
+walking into it within the next second and a half, ignores people on the
+pavement beside it, and drives on once the way is clear. (A pedestrian waits
+only for a vehicle still moving, so when a car stops for one, they cross.)
 `tests/peds_test.gd` checks someone walking at you, two meeting head-on, a
 crowd of 20, a car crossing, a car coming at someone in the road, a parked bus
 and a passing tram:

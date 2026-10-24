@@ -91,6 +91,8 @@ func enter(at: Vector3, yaw: float) -> void:
 
 
 func leave() -> void:
+	if traffic:
+		traffic.pedestrians = []         # nobody on foot in the map view
 	if vehicle != null:
 		_get_out()
 	active = false
@@ -719,6 +721,7 @@ func _peds(delta: float) -> void:
 			var pace: float = p.speed * clampf(nearest / 1.4, 0.35, 1.0) * hurry   # slower in a crowd
 			if wait:
 				pace = 0.0
+			p.pace = pace
 			if _free(p.pos + f * 1.2):
 				p.pos += f * pace * delta
 			else:
@@ -743,6 +746,13 @@ func _peds(delta: float) -> void:
 			var n2 := off2.normalized() if off2.length() > 0.001 else Vector3(1, 0, 0)
 			a.pos += n2 * (YOU_GAP - off2.length())
 			if speed > 3.5 and a.stag <= 0.0: a.stag = 0.9      # run into them and they stagger
+	# Tell the traffic where everyone is walking, so drivers brake for them.
+	if traffic:
+		var seen := []
+		for p in peds:
+			var pace: float = p.get("pace", 0.0) if p.stag <= 0.0 else 0.0   # as fast as they really walk (0 waiting at the kerb)
+			seen.append([Vector2(p.pos.x, p.pos.z), Vector2(-sin(p.heading), -cos(p.heading)) * pace])
+		traffic.pedestrians = seen
 	# ... and nobody stands inside a car, bus, tram or bike.
 	for a in peds:
 		for sg in cars:

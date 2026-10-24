@@ -1,7 +1,8 @@
 extends SceneTree
 ## The street traffic's physics on a test layout: cars dip their nose braking
-## for a bend and roll out of it, cyclists lean into it, and a tram you drive
-## pulls away, brakes, coasts and takes the branch you choose like a tram.
+## for a bend and roll out of it, cyclists lean into it, cars brake for
+## pedestrians in their way (and not for those on the pavement), and a tram
+## you drive pulls away, brakes, coasts and takes the branch you choose.
 ##     godot --headless --path godot-city --script tests/traffic_test.gd
 
 const Traffic := preload("res://scripts/traffic.gd")
@@ -60,6 +61,7 @@ func _until(v: Dictionary, cond: Callable) -> void:
 
 func _run() -> void:
 	await _bodies()
+	await _brakes()
 	await _tram()
 	print("traffic test: %d failed" % _fails)
 	quit(1 if _fails else 0)
@@ -103,6 +105,61 @@ func _bodies() -> void:
 	_check(lean_right > lean_wrong * 3 and lean_right > 0, "cyclists lean into their turns")
 	traffic.clear()
 	traffic.remove_tile("ring")
+
+
+# A car on a straight street, and pedestrians placed round it.
+func _brakes() -> void:
+	var y := 1000.0
+	traffic.add_tile("street", [{"kind": "road", "w": 8.0, "p": PackedVector2Array([Vector2(-600, y), Vector2(600, y)])}])
+	traffic.focus = Vector3(0, 0, y - 150)
+	traffic.target = {"car": 1, "bus": 0, "tram": 0, "bike": 0, "canta": 0}
+	var v = null
+	for i in 200:
+		await _step()
+		if traffic.vehicles.size():
+			v = traffic.vehicles[0]; break
+	traffic.target.car = 0
+	if v == null:
+		_check(false, "a car spawns on the test street"); return
+	for i in 60 * 6: await _step()                 # up to speed
+	var fwd: Vector2 = traffic._front(v)[1]
+	var right := Vector2(-fwd.y, fwd.x)
+	var cruise: float = v.speed
+	# 1. Someone standing in its lane 40 m ahead: it stops short and waits.
+	var at: Vector2 = v.pos + fwd * 40.0
+	traffic.pedestrians = [[at, Vector2.ZERO]]
+	for i in 60 * 10: await _step()
+	var short: float = (at - v.pos).dot(fwd)
+	print("brakes: cruising %.1f m/s, stopped %.1f m short (speed %.2f)" % [cruise, short, v.speed])
+	_check(v.speed < 0.2, "a car stops for someone standing in its lane (%.2f m/s)" % v.speed)
+	_check(short > 1.5 and short < 6.0, "a few metres short of them (%.1f m)" % short)
+	# They step out of the way: it drives on.
+	traffic.pedestrians = []
+	for i in 60 * 5: await _step()
+	_check(v.speed > 4.0, "and drives on once they have gone (%.1f m/s)" % v.speed)
+	for i in 60 * 4: await _step()
+	# 2. Someone on the pavement beside it, 4 m off its line: no braking.
+	var slowest := INF
+	at = v.pos + fwd * 30.0 + right * 4.0
+	traffic.pedestrians = [[at, Vector2.ZERO]]
+	for i in 60 * 4:
+		await _step()
+		slowest = minf(slowest, v.speed)
+	_check(slowest > cruise * 0.85, "but not for someone on the pavement beside it (slowest %.1f of %.1f m/s)" % [slowest, cruise])
+	traffic.pedestrians = []
+	for i in 60 * 4: await _step()
+	# 3. Someone stepping off the kerb 3 m off its line, walking into its way 20 m ahead.
+	slowest = INF
+	at = v.pos + fwd * 20.0 + right * 3.0
+	for i in 60 * 3:
+		traffic.pedestrians = [[at, -right * 1.3]]
+		at += -right * 1.3 / 60.0
+		await _step()
+		slowest = minf(slowest, v.speed)
+	_check(slowest < cruise * 0.6, "and slows for someone walking into its way (slowest %.1f of %.1f m/s)" % [slowest, cruise])
+	traffic.pedestrians = []
+	traffic.clear()
+	traffic.remove_tile("street")
 
 
 func _tram() -> void:
