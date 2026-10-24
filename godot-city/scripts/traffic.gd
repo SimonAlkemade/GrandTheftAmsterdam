@@ -32,6 +32,7 @@ var spawn_radius := 420.0
 var focus := Vector3.ZERO
 var player := Vector3(1e9, 0, 1e9)  # the walker, as an obstacle
 var enabled := true
+var street_y: Callable          # (p, base height) -> height: bridges hump over the canals
 
 var edges := {}        # id -> edge
 var nodes := {}        # Vector2i -> Array[[edge id, end]]
@@ -322,8 +323,14 @@ func _drive(v: Dictionary, dt: float) -> void:
 		var b := _behind(trail, v.pos, part[1] + part[2])
 		var mid: Vector2 = (a + b) / 2.0
 		var dir: Vector2 = (a - b).normalized() if a.distance_to(b) > 0.01 else fwd
-		part[0].position = Vector3(mid.x, spec.y, mid.y)
-		part[0].rotation.y = atan2(-dir.x, -dir.y)
+		var y: float = spec.y
+		var pitch := 0.0
+		if street_y.is_valid():          # up and over a bridge, nose up on the ramp
+			y = street_y.call(mid, spec.y)
+			var ya: float = street_y.call(a, spec.y); var yb: float = street_y.call(b, spec.y)
+			pitch = atan2(ya - yb, maxf(a.distance_to(b), 0.5))
+		part[0].position = Vector3(mid.x, y, mid.y)
+		part[0].rotation = Vector3(pitch, atan2(-dir.x, -dir.y), 0.0)
 	if v.kind == "bike":
 		v.parts[0][0].pedal(dt, v.speed)
 	elif v.kind == "canta":

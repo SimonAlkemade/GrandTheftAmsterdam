@@ -55,10 +55,25 @@ its own waterline, rights itself when heeled and pitches and rolls as it
 goes. The water drags weakly along the hull and hard across it, so the boat
 glides on when you let go and its stern slides out in a turn; the thrust acts
 at the stern along the outboard's angle, so it steers best under power. It
-bumps off quay walls and fits under the bridges. `tests/boat_test.gd` checks
-the waterline, the righting, the speed, the glide and the turn on flat water:
+bumps off quay walls. `tests/boat_test.gd` checks the waterline, the
+righting, the speed, the glide, the turn and ramming a quay on flat water:
 
     godot --headless --path godot-city --script tests/boat_test.gd
+
+## Bridges
+
+The bridges hump over the canals the Amsterdam way (`TileBuilder._bridge`):
+the data's bridges run from quay to quay, so a ramp rises from each quay over
+the first and last ~30% of the bridge to a level middle 1.2 m above the
+street, with railings, a stone edge and a stone underside 0.55 m below the
+deck. That leaves about 2.35 m of water clearance in the middle, so a sloep
+and the person at its helm pass underneath, and the camera drops under the
+deck with you. Where a chunk border cuts a bridge, its end there stays at full
+height, so the two halves meet. On foot you walk up and over, the cars, buses,
+trams and cyclists of the traffic ride over the hump (pitched on the ramps),
+the cars you drive climb it on their suspension, and lamps and benches on a
+bridge stand on its deck. Swimming under a bridge you climb out only at a
+quay, not up onto the bridge overhead.
 
 ## Mission 1: parcel courier
 

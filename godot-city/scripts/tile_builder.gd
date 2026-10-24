@@ -24,6 +24,16 @@ const BIKE_FROM_WALL := 0.45
 const WATER_Y := -1.4          # canal water lies well below the street...
 const QUAY_FOOT := -2.6        # ...between stone quay walls that go on down below it
 const BIKE_GAP := 0.65
+# Bridges hump over the canals the Amsterdam way: the data's bridges run from
+# quay to quay, so a ramp rises from each quay to a level middle that leaves a
+# sloep (and whoever stands at its helm) room underneath. Heights are above the
+# street; the water lies at WATER_Y.
+const BRIDGE_END := 0.3        # the deck where it meets the street
+const BRIDGE_RISE := 1.2       # how much higher the middle is (less on short bridges)
+const BRIDGE_RAMP := 0.3       # each ramp's share of the bridge (2 to 8 m)
+const BRIDGE_DEPTH := 0.55     # the deck's thickness: its underside is this far below
+const BRIDGE_WIDTH := 7.0
+const BRIDGE_CELL := 12.0      # the grid bridge_y looks segments up in
 
 var surf := {}          # material name -> [PackedVector3Array, PackedVector3Array, PackedVector2Array]
 var walls := PackedVector3Array()
@@ -254,9 +264,25 @@ func _ground_faces(sunk: bool) -> PackedVector3Array:
 	return out
 
 
-# A canal's stone quay wall along one ring of its outline, facing the water.
-# Edges along the chunk's border are only where the data was cut: no wall there.
-func _quay_wall(ring: PackedVector2Array, outer: bool, rect: Rect2) -> void:
+# Whether p is on the water of any polygon but `skip`.
+static func _wet(p: Vector2, water: Array, skip: int) -> bool:
+	for j in water.size():
+		if j == skip or not Geometry2D.is_point_in_polygon(p, water[j][0]):
+			continue
+		var hole := false
+		for k in range(1, water[j].size()):
+			if Geometry2D.is_point_in_polygon(p, water[j][k]): hole = true
+		if not hole:
+			return true
+	return false
+
+
+# A canal's stone quay wall along one ring of its outline, facing the water
+# (with `walls`; the flat data of an unsunk tile has none). Edges along the
+# chunk's border are only where the data was cut, and edges with water beyond
+# them are where it split a canal: no quay at either. Returns the shore as
+# runs of consecutive edges, for the kerb along its top.
+func _quay_wall(ring: PackedVector2Array, outer: bool, rect: Rect2, water: Array, me: int, walls := true) -> Array:
 	var area := 0.0
 	for i in ring.size():
 		var a: Vector2 = ring[i]; var b: Vector2 = ring[(i + 1) % ring.size()]
@@ -269,18 +295,34 @@ func _quay_wall(ring: PackedVector2Array, outer: bool, rect: Rect2) -> void:
 		if absf(p.y - rect.end.y) < 0.05: m |= 8
 		return m
 	var run := 0.0
+	var shore := []                     # runs of consecutive shore edges
+	var cur := PackedVector2Array()
 	for i in ring.size():
 		var a: Vector2 = ring[i]; var b: Vector2 = ring[(i + 1) % ring.size()]
 		var length := a.distance_to(b)
-		if length < 0.01 or (on_edge.call(a) & on_edge.call(b)) != 0:
+		if length < 0.01:
 			continue
 		var d := (b - a) / length
 		var inward := Vector2(-d.y, d.x) if area > 0.0 else Vector2(d.y, -d.x)
 		var n2 := inward if outer else -inward   # the water is inside the outline, outside an island
-		var n := Vector3(n2.x, 0, n2.y)
-		quad("quay_wall", Vector3(a.x, QUAY_FOOT, a.y), Vector3(b.x, QUAY_FOOT, b.y), Vector3(b.x, 0.0, b.y), Vector3(a.x, 0.0, a.y), n,
-			[Vector2(run / 3.0, 0), Vector2((run + length) / 3.0, 0), Vector2((run + length) / 3.0, -QUAY_FOOT / 3.0), Vector2(run / 3.0, -QUAY_FOOT / 3.0)])
+		if (on_edge.call(a) & on_edge.call(b)) != 0 or _wet((a + b) / 2.0 - n2 * 0.4, water, me):
+			if cur.size() > 1: shore.append(cur)
+			cur = PackedVector2Array()
+			continue
+		if cur.is_empty(): cur.append(a)
+		cur.append(b)
+		if walls:
+			var n := Vector3(n2.x, 0, n2.y)
+			quad("quay_wall", Vector3(a.x, QUAY_FOOT, a.y), Vector3(b.x, QUAY_FOOT, b.y), Vector3(b.x, 0.0, b.y), Vector3(a.x, 0.0, a.y), n,
+				[Vector2(run / 3.0, 0), Vector2((run + length) / 3.0, 0), Vector2((run + length) / 3.0, -QUAY_FOOT / 3.0), Vector2(run / 3.0, -QUAY_FOOT / 3.0)])
 		run += length
+	if cur.size() > 1:
+		# A run that goes on round the ring's start joins the first one.
+		if not shore.is_empty() and shore[0][0] == cur[cur.size() - 1]:
+			cur.append_array(shore[0].slice(1)); shore[0] = cur
+		else:
+			shore.append(cur)
+	return shore
 
 
 # ---- streets, water, green ----------------------------------------------------
@@ -320,6 +362,102 @@ func side(mat: String, p: PackedVector2Array, y0: float, y1: float) -> void:
 				[Vector2(0, 0), Vector2(seg_len, 0), Vector2(seg_len, 1), Vector2(0, 1)])
 
 
+# The deck height `s` metres along a bridge `length` long. An end cut by the
+# chunk border has no ramp (the bridge goes on in the next chunk at full
+# height, where the same rule meets it).
+static func bridge_height(s: float, length: float, ramp_start: bool, ramp_end: bool) -> float:
+	var rise := BRIDGE_RISE if not (ramp_start and ramp_end) else clampf(length * 0.1, 0.5, BRIDGE_RISE)
+	var ramp := clampf(length * BRIDGE_RAMP, 2.0, 8.0)
+	var t := 1.0
+	if ramp_start: t = minf(t, s / ramp)
+	if ramp_end: t = minf(t, (length - s) / ramp)
+	t = clampf(t, 0.0, 1.0)
+	return BRIDGE_END + rise * t * t * (3.0 - 2.0 * t)
+
+
+# A humped bridge along centre line p: the deck, a railing each side, the
+# stone edge under the deck and its underside (the last three are solid).
+# Returns [points every 2 m or less, deck height at each], or [].
+func _bridge(p: PackedVector2Array, rect: Rect2) -> Array:
+	if p.size() < 2:
+		return []
+	var cut := func(e: Vector2) -> bool:
+		return absf(e.x - rect.position.x) < 0.05 or absf(e.x - rect.end.x) < 0.05 \
+			or absf(e.y - rect.position.y) < 0.05 or absf(e.y - rect.end.y) < 0.05
+	var ramp_a: bool = not cut.call(p[0])
+	var ramp_b: bool = not cut.call(p[p.size() - 1])
+	var q := PackedVector2Array([p[0]])
+	for i in p.size() - 1:
+		var n := maxi(1, ceili(p[i].distance_to(p[i + 1]) / 2.0))
+		for k in range(1, n + 1):
+			q.append(p[i].lerp(p[i + 1], float(k) / n))
+	var along := PackedFloat32Array([0.0])
+	for i in range(1, q.size()):
+		along.append(along[i - 1] + q[i - 1].distance_to(q[i]))
+	var length: float = along[along.size() - 1]
+	var h := PackedFloat32Array()
+	for d in along:
+		h.append(bridge_height(d, length, ramp_a, ramp_b))
+	var o := ribbon("", q, BRIDGE_WIDTH, 0.0)
+	if o.is_empty():
+		return []
+	var L: PackedVector2Array = o[0]; var R: PackedVector2Array = o[1]
+	var v3 := func(e: Vector2, y: float) -> Vector3: return Vector3(e.x, y, e.y)
+	for i in q.size() - 1:
+		var y0: float = h[i]; var y1: float = h[i + 1]
+		var a: Vector3 = v3.call(L[i], y0); var b: Vector3 = v3.call(R[i], y0)
+		var c: Vector3 = v3.call(R[i + 1], y1); var d: Vector3 = v3.call(L[i + 1], y1)
+		var up := (d - a).cross(b - a).normalized()
+		if up.y < 0.0: up = -up
+		var u0 := along[i] / 4.0; var u1 := along[i + 1] / 4.0; var wv := BRIDGE_WIDTH / 4.0
+		quad("bridge", a, b, c, d, up, [Vector2(0, u0), Vector2(wv, u0), Vector2(wv, u1), Vector2(0, u1)])
+		var dn := Vector3(0, -BRIDGE_DEPTH, 0)
+		quad("quay_wall", a + dn, b + dn, c + dn, d + dn, -up, [Vector2(0, u0), Vector2(wv, u0), Vector2(wv, u1), Vector2(0, u1)])
+		for e in [L, R]:
+			var e0: Vector2 = e[i]; var e1: Vector2 = e[i + 1]
+			var seg := (e1 - e0).normalized()
+			var n := Vector3(-seg.y, 0, seg.x)
+			var run := along[i]; var run1 := along[i + 1]
+			for sgn in [1.0, -1.0]:
+				quad("bridge_side", v3.call(e0, y0), v3.call(e1, y1), v3.call(e1, y1 + 0.8), v3.call(e0, y0 + 0.8), n * sgn,
+					[Vector2(run, 0), Vector2(run1, 0), Vector2(run1, 1), Vector2(run, 1)])
+				quad("quay_wall", v3.call(e0, y0 - BRIDGE_DEPTH), v3.call(e1, y1 - BRIDGE_DEPTH), v3.call(e1, y1), v3.call(e0, y0), n * sgn,
+					[Vector2(run / 3.0, 0), Vector2(run1 / 3.0, 0), Vector2(run1 / 3.0, BRIDGE_DEPTH / 3.0), Vector2(run / 3.0, BRIDGE_DEPTH / 3.0)])
+	return [q, h]
+
+
+# Each bridge segment, with its end heights, in every grid cell it passes near.
+func _index_bridge(q: PackedVector2Array, h: PackedFloat32Array, cells: Dictionary) -> void:
+	var reach := BRIDGE_WIDTH / 2.0
+	for i in q.size() - 1:
+		var lo := Vector2(minf(q[i].x, q[i + 1].x), minf(q[i].y, q[i + 1].y)) - Vector2.ONE * reach
+		var hi := Vector2(maxf(q[i].x, q[i + 1].x), maxf(q[i].y, q[i + 1].y)) + Vector2.ONE * reach
+		for cx in range(floori(lo.x / BRIDGE_CELL), floori(hi.x / BRIDGE_CELL) + 1):
+			for cz in range(floori(lo.y / BRIDGE_CELL), floori(hi.y / BRIDGE_CELL) + 1):
+				var k := Vector2i(cx, cz)
+				if not cells.has(k):
+					cells[k] = []
+				cells[k].append([q[i], q[i + 1], h[i], h[i + 1]])
+
+
+## The deck height of the bridge over p (from a built tile's bridge_cells), or NAN.
+static func bridge_y(cells: Dictionary, p: Vector2) -> float:
+	var segs = cells.get(Vector2i(floori(p.x / BRIDGE_CELL), floori(p.y / BRIDGE_CELL)))
+	if segs == null:
+		return NAN
+	var best := BRIDGE_WIDTH / 2.0
+	var y := NAN
+	for sg in segs:
+		var a: Vector2 = sg[0]; var b: Vector2 = sg[1]
+		var c := Geometry2D.get_closest_point_to_segment(p, a, b)
+		var d := c.distance_to(p)
+		if d < best:
+			best = d
+			var t := c.distance_to(a) / maxf(a.distance_to(b), 0.001)
+			y = lerpf(float(sg[2]), float(sg[3]), t)
+	return y
+
+
 ## Call on a fresh instance: TileBuilder.new().build_tile(data).
 func build_tile(data: Dictionary) -> Dictionary:
 	var ti: int = int(data.tile[0]); var tj: int = int(data.tile[1])
@@ -346,19 +484,21 @@ func build_tile(data: Dictionary) -> Dictionary:
 		var rings := []
 		for r in g.r: rings.append(pts(r))
 		polygon("plaza", rings, 0.02, 3.0, g.get("t"))
-	# Water, with a stone quay along every edge; outlines kept for swimming.
+	# Water, with a stone quay along every edge that is a shore; outlines kept
+	# for swimming. (The data splits a canal into pieces, often under a bridge:
+	# where two pieces meet there is water on both sides and no quay.)
 	var water := []
 	for w in data.get("water", []):
 		var rings := []
 		for r in w.r: rings.append(pts(r))
-		polygon("water", rings, WATER_Y if data.has("ground") else 0.05, 20.0, w.get("t"))
-		if data.has("ground"):
-			for k in rings.size():
-				_quay_wall(rings[k], k == 0, Rect2(x0, z0, tile_size, tile_size))
-		for r in rings:
-			var closed: PackedVector2Array = r.duplicate(); closed.append(r[0])
-			ribbon("quay", closed, 0.6, 0.12, 2.0)
 		water.append(rings)
+	for i in water.size():
+		var rings: Array = water[i]
+		var t = data.water[i].get("t")
+		polygon("water", rings, WATER_Y if data.has("ground") else 0.05, 20.0, t)
+		for k in rings.size():
+			for run in _quay_wall(rings[k], k == 0, Rect2(x0, z0, tile_size, tile_size), water, i, data.has("ground")):
+				ribbon("quay", run, 0.6, 0.12, 2.0)
 	# Streets, tram and rail; polylines kept for traffic and street names.
 	var lanes := []
 	var names := []
@@ -374,13 +514,13 @@ func build_tile(data: Dictionary) -> Dictionary:
 		if str(rd[3]) != "":
 			names.append([p[p.size() / 2], str(rd[3])])
 	var bridges := []
+	var bridge_cells := {}
 	for coords in data.get("bridges", []):
-		var p := pts(coords)
-		var o := ribbon("bridge", p, 7.0, 0.3)
-		if o.size():
-			side("bridge_side", o[0], 0.3, 1.1); side("bridge_side", o[1], 0.3, 1.1)
-			side("quay_wall", o[0], -0.6, 0.3); side("quay_wall", o[1], -0.6, 0.3)   # the deck's edge
-		bridges.append(p)
+		var b := _bridge(pts(coords), Rect2(x0, z0, tile_size, tile_size))
+		if b.is_empty():
+			continue
+		bridges.append(b[0])
+		_index_bridge(b[0], b[1], bridge_cells)
 	var labels := []
 	for l in data.get("waterLabels", []):
 		labels.append([str(l[0]), Vector2(float(l[1]) / 10.0, -float(l[2]) / 10.0), float(l[3])])
@@ -394,7 +534,7 @@ func build_tile(data: Dictionary) -> Dictionary:
 		places.append([str(p[0]), str(p[1]), Vector2(float(p[2]) / 10.0, -float(p[3]) / 10.0), int(p[4])])
 	return {
 		"key": "%d_%d" % [ti, tj], "rect": Rect2(x0, z0, tile_size, tile_size),
-		"surfaces": surf, "walls": walls, "lanes": lanes, "water": water, "bridges": bridges,
+		"surfaces": surf, "walls": walls, "lanes": lanes, "water": water, "bridges": bridges, "bridge_cells": bridge_cells,
 		"labels": labels, "points": points, "places": places, "names": names, "buildings": bl.size(),
 		"street_bikes": street_bikes,
 		"water_y": (WATER_Y if data.has("ground") else 0.05),

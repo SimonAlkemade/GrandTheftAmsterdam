@@ -11,8 +11,8 @@ extends CharacterBody3D
 const Human := preload("res://scripts/human.gd")
 const Models := preload("res://scripts/vehicle_models.gd")
 const VPhys := preload("res://scripts/vehicle_physics.gd")
+const TileBuilder := preload("res://scripts/tile_builder.gd")
 const SWIM_Y := -2.65          # your feet while swimming: the canal is 1.4 m below the street
-const BRIDGE_Y := 0.3
 const WATER_Y := -1.4          # the canal surface (TileBuilder.WATER_Y)
 const ENTER_RANGE := 3.0
 const BOARD_RANGE := 4.0       # a boat lies below the quay: a little more reach
@@ -127,7 +127,9 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _ground(p: Vector3):
 	match streamer.water_at(p):
-		2: return BRIDGE_Y
+		2:
+			var y: float = streamer.bridge_y(p)
+			return null if is_nan(y) else y
 		1: return null
 	return 0.0
 
@@ -198,7 +200,7 @@ func _physics_process(delta: float) -> void:
 		if swimming:
 			global_position.y = SWIM_Y
 			var ahead := global_position + fwd * 0.9
-			if speed > 0.4 and _ground(ahead) != null and _free(ahead):
+			if speed > 0.4 and streamer.water_at(ahead) == 0 and _free(ahead):   # a quay, not the bridge overhead
 				state = "climb"; climb_t = 0.0
 		else:
 			if Input.is_physical_key_pressed(KEY_SPACE) and grounded:
@@ -245,13 +247,27 @@ func _camera(delta: float) -> void:
 			cam_pitch = lerpf(cam_pitch, 0.28, 1.0 - exp(-delta * 1.0))
 	var dir := Vector3(sin(cam_yaw) * cos(cam_pitch), sin(cam_pitch), cos(cam_yaw) * cos(cam_pitch))
 	var d := reach
-	var q := PhysicsRayQueryParameters3D.create(head, head + dir * reach, 1)   # buildings only: not the ground, not your own car
+	# Buildings only (not the ground, not your own car); on the water also the
+	# quay walls and bridges, so the camera ducks under a bridge with you:
+	# under a deck (over you, or where the camera would be) it drops below the
+	# deck's underside and looks along the canal, level.
+	var afloat: bool = state == "swim" or (vehicle != null and vehicle.kind == "boat")
+	if afloat:
+		var under := INF
+		for at in [head, head + Vector3(dir.x, 0, dir.z) * reach * 0.6]:
+			var deck: float = streamer.bridge_y(at)
+			if not is_nan(deck):
+				under = minf(under, deck - TileBuilder.BRIDGE_DEPTH)
+		if under < INF:
+			head.y = minf(head.y, under - 0.65)
+			dir = Vector3(dir.x, minf(dir.y, 0.03), dir.z).normalized()
+	var q := PhysicsRayQueryParameters3D.create(head, head + dir * reach, 1 | (VPhys.GROUND_LAYER if afloat else 0))
 	q.exclude = [get_rid()]
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	if not hit.is_empty():
 		d = maxf(0.8, head.distance_to(hit.position) - 0.3)
 	var want := head + dir * d
-	want.y = maxf(want.y, 0.3)
+	want.y = maxf(want.y, WATER_Y + 0.5 if afloat else 0.3)
 	cam.global_position = cam.global_position.lerp(want, 1.0 - exp(-delta * 14.0))
 	var fast: bool = state == "run" or (vehicle != null and absf(car_speed) > 11.0)
 	cam.fov = lerpf(cam.fov, 74.0 if fast else 68.0, 1.0 - exp(-delta * 4.0))
@@ -417,9 +433,8 @@ func _leave_boat(v: Dictionary) -> void:
 		for side in [right, -right, f * 1.8, -f * 1.6]:
 			var p: Vector2 = c + side * d
 			var p3 := Vector3(p.x, 0.0, p.y)
-			if streamer.water_at(p3) != 1 and _free(p3) and not traffic.blocked(p, {}):
-				var g = _ground(p3)
-				global_position = Vector3(p.x, g if g != null else 0.0, p.y)
+			if streamer.water_at(p3) == 0 and _free(p3) and not traffic.blocked(p, {}):   # the quay, not a bridge overhead
+				global_position = Vector3(p.x, 0.0, p.y)
 				vy = 0.0; grounded = true; state = "idle"; speed = 0.0
 				return
 	var p: Vector2 = c + right * 1.9

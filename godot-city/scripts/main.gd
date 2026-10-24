@@ -75,6 +75,7 @@ func _ready() -> void:
 	walker.setup(streamer, cam)
 	walker.traffic = traffic
 	walker.boats = boats
+	traffic.street_y = streamer.street_y
 	mission = Mission.new()
 	add_child(mission)
 	mission.setup(streamer, traffic, walker)

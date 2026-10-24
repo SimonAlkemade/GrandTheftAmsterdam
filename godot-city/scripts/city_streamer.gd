@@ -311,7 +311,7 @@ func _build(key: String, data) -> void:
 	var r := {}
 	if typeof(data) == TYPE_DICTIONARY:
 		r = TileBuilder.new().build_tile(data)
-		r.instances = _instance_buffers(r.points, r.street_bikes)
+		r.instances = _instance_buffers(r.points, r.street_bikes, r.bridge_cells)
 		r.mini = _minimap_cells(r.surfaces)
 	else:
 		r = {"key": key, "failed": true, "rect": Rect2()}
@@ -373,7 +373,7 @@ func minimap_near(p: Vector2, radius: float) -> Array:
 
 
 # MultiMesh buffers (3x4 transform + colour per instance), built off-thread.
-func _instance_buffers(points: Dictionary, street_bikes: Array) -> Dictionary:
+func _instance_buffers(points: Dictionary, street_bikes: Array, bridge_cells: Dictionary) -> Dictionary:
 	var out := {}
 	var rng := RandomNumberGenerator.new()
 	for kind in points:
@@ -403,7 +403,8 @@ func _instance_buffers(points: Dictionary, street_bikes: Array) -> Dictionary:
 			var bas := Basis(Vector3.UP, yaw).scaled(Vector3(s, s, s))
 			var o := i * 16
 			buf[o] = bas.x.x; buf[o + 1] = bas.y.x; buf[o + 2] = bas.z.x; buf[o + 3] = p[i].x
-			buf[o + 4] = bas.x.y; buf[o + 5] = bas.y.y; buf[o + 6] = bas.z.y; buf[o + 7] = 0.0
+			var deck := TileBuilder.bridge_y(bridge_cells, p[i])   # lamps and benches on a bridge stand on its deck
+			buf[o + 4] = bas.x.y; buf[o + 5] = bas.y.y; buf[o + 6] = bas.z.y; buf[o + 7] = 0.0 if is_nan(deck) else deck
 			buf[o + 8] = bas.x.z; buf[o + 9] = bas.y.z; buf[o + 10] = bas.z.z; buf[o + 11] = p[i].y
 			var c := Color.from_hsv(0.24 + rng.randf() * 0.06, 0.45 + rng.randf() * 0.15, 0.32 + rng.randf() * 0.12)
 			if kind == "bikes":
@@ -530,16 +531,26 @@ func tile_at(p: Vector3) -> Dictionary:
 	return t.result if t and t.state == "ready" else {}
 
 
-## 0 = land, 1 = water, 2 = on a bridge.
+## The deck height of the bridge over p, or NAN where there is none.
+func bridge_y(p: Vector3) -> float:
+	var r := tile_at(p)
+	return NAN if r.is_empty() else TileBuilder.bridge_y(r.bridge_cells, Vector2(p.x, p.z))
+
+
+## What street traffic at height `base` stands on at p: a bridge deck, or the street.
+func street_y(p: Vector2, base: float) -> float:
+	var y := bridge_y(Vector3(p.x, 0, p.y))
+	return base if is_nan(y) else maxf(base, y)
+
+
+## 0 = land, 1 = water, 2 = on a bridge (or under one).
 func water_at(p: Vector3) -> int:
 	var r := tile_at(p)
 	if r.is_empty():
 		return 0
 	var q := Vector2(p.x, p.z)
-	for line in r.bridges:
-		for i in line.size() - 1:
-			if Geometry2D.get_closest_point_to_segment(q, line[i], line[i + 1]).distance_to(q) < 3.5:
-				return 2
+	if not is_nan(TileBuilder.bridge_y(r.bridge_cells, q)):
+		return 2
 	for rings in r.water:
 		if Geometry2D.is_point_in_polygon(q, rings[0]):
 			var in_hole := false
