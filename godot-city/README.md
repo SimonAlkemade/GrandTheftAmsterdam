@@ -153,6 +153,19 @@ it coasts on and on. **A/D** set the points: at the next junction it takes the
 leftmost or rightmost branch (otherwise the straightest). The three sections
 follow the front round the curves, and a car in its way is shoved aside.
 
+### Pedestrians
+
+The 24 people walking the streets around you keep their distance the way
+people do: each looks up to three seconds ahead for anyone who will pass too
+close (you, the vehicle you are in, or another pedestrian) and sidesteps
+early, to its right when the other comes straight at it, so two people
+meeting pass each other; it gives room to anyone already close, slows in a
+crowd, and nobody ever overlaps anyone. Run into one and they stagger.
+`tests/peds_test.gd` checks someone walking at you, two meeting head-on and a
+crowd of 20:
+
+    godot --headless --path godot-city --script tests/peds_test.gd
+
 ### The traffic on its springs
 
 Every car, Canta, bus and tram near you rides on springs: a damped spring per

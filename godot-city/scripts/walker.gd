@@ -576,7 +576,23 @@ func _place(p: Dictionary, near: bool) -> void:
 			return
 
 
+# Pedestrians keep their distance the way people do: each one looks up to
+# three seconds ahead for anyone (you included, and the vehicle you are in)
+# who will come too close, and sidesteps early and gently, to its right when
+# the other comes straight at it, so two people meeting pass each other; it
+# gives room to anyone already close, slows in a crowd, and no two ever
+# stand in the same spot.
+const LOOK_AHEAD := 3.0         # seconds ahead a pedestrian sees a collision coming
+const PED_CLEAR := 1.0          # how far it wants to pass another pedestrian
+const YOU_CLEAR := 1.8          # ... and you
+const PED_SPACE := 1.2          # metres within which it backs off from another
+const YOU_SPACE := 2.0          # ... from you
+const PED_GAP := 0.6            # never closer than this to each other
+const YOU_GAP := 0.75           # ... or to you
+
 func _peds(delta: float) -> void:
+	var you := Vector2(global_position.x, global_position.z)
+	var your_vel := Vector2(-sin(heading), -cos(heading)) * speed
 	for p in peds:
 		if p.pos.distance_to(global_position) > 85.0:
 			_place(p, false)
@@ -589,23 +605,68 @@ func _peds(delta: float) -> void:
 			p.turn -= delta
 			if p.turn <= 0.0:
 				p.heading += _rng.randf_range(-0.6, 0.6); p.turn = _rng.randf_range(2.0, 6.0)
-			var off: Vector3 = p.pos - global_position
-			if off.length() < 2.2:          # step aside for the player
-				p.heading += wrapf(atan2(-off.x, -off.z) + PI - p.heading, -PI, PI) * delta * 3.0
+			var me := Vector2(p.pos.x, p.pos.z)
+			var fwd := Vector2(-sin(p.heading), -cos(p.heading))
+			var my_vel: Vector2 = fwd * p.speed
+			var right := Vector2(-fwd.y, fwd.x)           # the right of the way it walks
+			var push := Vector2.ZERO
+			var nearest := INF
+			var others := [[you, your_vel, YOU_CLEAR, YOU_SPACE, 2.0]]   # where, moving, pass at, room, how strongly
+			for o in peds:
+				if o != p:
+					others.append([Vector2(o.pos.x, o.pos.z), Vector2(-sin(o.heading), -cos(o.heading)) * float(o.speed), PED_CLEAR, PED_SPACE, 1.0])
+			for o in others:
+				var rel: Vector2 = o[0] - me              # where it is, from here
+				var d := rel.length()
+				if d > 12.0:
+					continue
+				nearest = minf(nearest, d)
+				# Where it will be at our closest approach, and when.
+				var rv: Vector2 = o[1] - my_vel
+				var t := 0.0
+				if rv.length_squared() > 1e-4:
+					t = clampf(-rel.dot(rv) / rv.length_squared(), 0.0, LOOK_AHEAD)
+				var miss: Vector2 = rel + rv * t
+				if miss.length() < o[2] and rel.dot(fwd) > -0.5:
+					# A collision coming: sidestep, early and gently, away from where
+					# it will pass (to the right if it will pass dead ahead).
+					var side := right
+					if absf(miss.dot(right)) > 0.1 and miss.dot(right) > 0.0:
+						side = -right
+					push += side * (1.0 - t / LOOK_AHEAD) * (1.0 - miss.length() / o[2]) * o[4] * 1.6
+				if d < o[3] and d > 0.001:
+					push -= rel / d * (1.0 - d / o[3]) * o[4]   # already close: give room
+			if push.length() > 0.01:
+				var want := (fwd + push * 1.5).normalized()
+				var aim := atan2(-want.x, -want.y)
+				p.heading += clampf(wrapf(aim - p.heading, -PI, PI), -4.0 * delta, 4.0 * delta)
 			var f := Vector3(-sin(p.heading), 0, -cos(p.heading))
+			var pace: float = p.speed * clampf(nearest / 1.4, 0.35, 1.0)   # slower in a crowd
 			if _free(p.pos + f * 1.2):
-				p.pos += f * p.speed * delta
+				p.pos += f * pace * delta
 			else:
 				for t in [0.6, -0.6, 1.3, -1.3, 2.2, -2.2, PI]:
 					var hh: float = p.heading + t
 					if _free(p.pos + Vector3(-sin(hh), 0, -cos(hh)) * 1.2):
 						p.heading = hh; break
-			h.animate(delta, "walk", p.speed)
-		var off2: Vector3 = p.pos - global_position
+			h.animate(delta, "walk", pace)
+	# Nobody overlaps: push pairs apart, and everyone out of your way.
+	for i in peds.size():
+		var a: Dictionary = peds[i]
+		for j in range(i + 1, peds.size()):
+			var b: Dictionary = peds[j]
+			var d: Vector3 = a.pos - b.pos; d.y = 0.0
+			if d.length() < PED_GAP:
+				var n := d.normalized() if d.length() > 0.001 else Vector3(1, 0, 0)
+				var fix := (PED_GAP - d.length()) / 2.0
+				a.pos += n * fix; b.pos -= n * fix
+		var off2: Vector3 = a.pos - global_position
 		off2.y = 0.0
-		if off2.length() < 0.65 and off2.length() > 0.01:
-			p.pos += off2.normalized() * (0.65 - off2.length())
-			if speed > 3.5 and p.stag <= 0.0: p.stag = 0.9
+		if off2.length() < YOU_GAP:
+			var n2 := off2.normalized() if off2.length() > 0.001 else Vector3(1, 0, 0)
+			a.pos += n2 * (YOU_GAP - off2.length())
+			if speed > 3.5 and a.stag <= 0.0: a.stag = 0.9      # run into them and they stagger
+	for p in peds:
 		var gy = _ground(p.pos)
-		h.position = Vector3(p.pos.x, gy if gy != null else 0.0, p.pos.z)
-		h.rotation.y = p.heading
+		p.h.position = Vector3(p.pos.x, gy if gy != null else 0.0, p.pos.z)
+		p.h.rotation.y = p.heading
