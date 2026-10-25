@@ -170,6 +170,15 @@ both again on a side sign by the front door, the number in the back window,
 and E next to it says which tram it is. (The traffic follows the real tracks,
 not those lines' routes.)
 
+The tracks are one-way, as in Amsterdam: a line is two tracks side by side and
+trams keep right, so each track runs the way that puts the other track, the
+oncoming one, on a tram's left. That direction is read off the map data (a
+track with no partner beside it, a single-track stretch, runs both ways). At
+the end of a track a tram crosses over to the track back, as round a terminus
+loop, once it is clear. Trams never pass through one another: a tram keeps a
+stopping distance behind the one ahead, measured along the rails and over the
+points, and waits behind it rather than slipping past.
+
 E at a tram's front cab puts you at its controls. A tram stays on its rails,
 so its physics is along them: 35 tonnes, up to 1.3 m/s² of traction fading
 towards 70 km/h, **W** power, **S** the service brake (50 km/h to a stop in
@@ -209,7 +218,7 @@ braking for a bend (about 4°), squats pulling away, rolls out of a corner
 (about 4° for a car, more for a bus, hardly at all for a tram) and settles.
 Cyclists lean into their turns by the angle that balances them. Car and bus
 wheels turn. A cyclist you hit goes down, bike and all.
-`tests/traffic_test.gd` checks the springs, the lean and the tram's
+`tests/traffic_test.gd` checks the springs, the lean, the one-way double track and the tram's
 traction, brakes, coasting and points on a test layout:
 
     godot --headless --path godot-city --script tests/traffic_test.gd

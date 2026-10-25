@@ -2,7 +2,9 @@ extends SceneTree
 ## The street traffic's physics on a test layout: cars dip their nose braking
 ## for a bend and roll out of it, cyclists lean into it, cars brake for
 ## pedestrians in their way (and not for those on the pavement), and a tram
-## you drive pulls away, brakes, coasts and takes the branch you choose.
+## you drive pulls away, brakes, coasts and takes the branch you choose; and
+## on double track trams keep right, one way per track, turn round on to the
+## other track at the end of the line, and never run through one another.
 ##     godot --headless --path godot-city --script tests/traffic_test.gd
 
 const Traffic := preload("res://scripts/traffic.gd")
@@ -63,6 +65,7 @@ func _run() -> void:
 	await _bodies()
 	await _brakes()
 	await _tram()
+	await _tram_lines()
 	print("traffic test: %d failed" % _fails)
 	quit(1 if _fails else 0)
 
@@ -121,6 +124,9 @@ func _brakes() -> void:
 	traffic.target.car = 0
 	if v == null:
 		_check(false, "a car spawns on the test street"); return
+	# From near the west end, heading east: room ahead for everything below.
+	v.dir = 1; v.s = 120.0; v.trail = []
+	v.pos = traffic._front(v)[0]
 	for i in 60 * 6: await _step()                 # up to speed
 	var fwd: Vector2 = traffic._front(v)[1]
 	var right := Vector2(-fwd.y, fwd.x)
@@ -227,3 +233,45 @@ func _tram() -> void:
 		traffic.focus = Vector3(v.pos.x, 0, v.pos.y)
 		if v.edge != traffic.by_kind.tram[0]: break
 	_check(v.edge == left_id, "A at the points takes the left branch")
+
+
+func _tram_lines() -> void:
+	traffic.clear()
+	for t in ["trunk", "left", "right"]: traffic.remove_tile(t)
+	# A line of double track 1 km long, east-west, the tracks 3 m apart, both
+	# drawn west to east. Keeping right, the south track runs east.
+	var y := -2000.0
+	traffic.add_tile("line", [
+		{"kind": "tram", "w": 3.0, "p": PackedVector2Array([Vector2(-500, y - 1.5), Vector2(500, y - 1.5)])},
+		{"kind": "tram", "w": 3.0, "p": PackedVector2Array([Vector2(-500, y + 1.5), Vector2(500, y + 1.5)])}])
+	var north: Dictionary = traffic.edges[traffic.by_kind.tram[-2]]
+	var south: Dictionary = traffic.edges[traffic.by_kind.tram[-1]]
+	_check(traffic.tram_way(south) == 1 and traffic.tram_way(north) == -1,
+		"each track runs one way, keeping right (south track %d, north track %d)" % [traffic.tram_way(south), traffic.tram_way(north)])
+	traffic.focus = Vector3(0, 0, y - 150.0)    # (trams spawn 60 m and more away)
+	traffic.spawn_radius = 420.0
+	traffic.target = {"car": 0, "bus": 0, "tram": 6, "bike": 0, "canta": 0}
+	for i in 60 * 3: await _step()
+	traffic.target.tram = 0
+	var trams: Array = traffic.vehicles.filter(func(v): return v.kind == "tram")
+	print("tram lines: %d trams on the line" % trams.size())
+	var wrong := 0
+	var overlap := INF
+	var turned := 0
+	var last_edge := trams.map(func(v): return v.edge)
+	for i in 60 * 120:
+		await _step()
+		for k in trams.size():
+			var v: Dictionary = trams[k]
+			if not traffic.vehicles.has(v): continue
+			if v.dir != traffic.tram_way(traffic.edges[v.edge]): wrong += 1
+			if v.edge != last_edge[k]:
+				turned += 1; last_edge[k] = v.edge
+			for o in trams:
+				if o == v or o.edge != v.edge or not traffic.vehicles.has(o): continue
+				overlap = minf(overlap, absf(v.s - o.s))
+	print("tram lines: %d steps against the track's way, %d turnarounds, closest on one track %.1f m" % [wrong, turned, overlap])
+	_check(trams.size() >= 3, "trams run on the line (%d)" % trams.size())
+	_check(wrong == 0, "always the way their track runs (%d steps wrong)" % wrong)
+	_check(turned > 0, "at the end of the line they come back on the other track (%d)" % turned)
+	_check(overlap >= Traffic.KINDS.tram.len, "and never run into or through each other (closest %.1f m, front to front)" % overlap)

@@ -65,6 +65,7 @@ var nodes := {}        # Vector2i -> Array[[edge id, end]]
 var by_kind := {"road": [], "tram": [], "bike": []}
 var vehicles: Array = []
 var _next_id := 0
+var _tram_cells := {}           # 8 m cell -> tram edge ids passing through it
 var _field := {}                # a police call's streets: node -> metres by road to the call
 var _field_to := Vector2.INF
 var _field_near := CALL_NEAR    # how near the street ends it was seeded from are
@@ -96,6 +97,8 @@ func add_tile(key: String, lanes: Array) -> void:
 			if not nodes.has(k): nodes[k] = []
 			nodes[k].append([id, end])
 		by_kind[l.kind].append(id)
+		if l.kind == "tram":
+			_index_tram(e)
 
 
 func remove_tile(key: String) -> void:
@@ -110,6 +113,9 @@ func remove_tile(key: String) -> void:
 				nodes[k] = nodes[k].filter(func(x): return not gone.has(x[0]))
 				if nodes[k].is_empty(): nodes.erase(k)
 		by_kind[e.kind].erase(id)
+		if e.kind == "tram":
+			for c in e.get("cells", []):
+				_tram_cells[c] = _tram_cells[c].filter(func(x): return x != id)
 		edges.erase(id)
 	for v in vehicles.duplicate():
 		if gone.has(v.edge) and not v.get("driver", false) and not v.get("parked", false):
@@ -140,6 +146,110 @@ func _front(v: Dictionary) -> Array:
 	return [r[0] + right * lane, fwd]
 
 
+# ---- one-way tram tracks -----------------------------------------------------------
+# Amsterdam's trams run on double track, one track each way, keeping right:
+# the other track, the oncoming one, is on a tram's left. So each track has a
+# way it is run (`way`: 1 along its points, -1 against them), read off the
+# track beside it; a track with none beside it (a single-track stretch, a
+# terminus loop) is 0, either way.
+const TRAM_CELL := 8.0
+const TRAM_PAIR := [1.5, 6.0]        # how far apart the two tracks of a line lie (m)
+
+
+func _index_tram(e: Dictionary) -> void:
+	var cells := {}
+	var d := 0.0
+	while d <= e.len:
+		var p: Vector2 = _at(e, d)[0]
+		cells[Vector2i(floori(p.x / TRAM_CELL), floori(p.y / TRAM_CELL))] = true
+		d += TRAM_CELL / 2.0
+	e.cells = cells.keys()
+	for c in cells:
+		if not _tram_cells.has(c): _tram_cells[c] = []
+		_tram_cells[c].append(e.id)
+		for dx in range(-1, 2):           # a newly loaded track may pair with one already here
+			for dy in range(-1, 2):
+				for x in _tram_cells.get(c + Vector2i(dx, dy), []):
+					edges[x].erase("way")
+
+
+func tram_way(e: Dictionary) -> int:
+	if e.has("way"):
+		return e.way
+	var vote := 0
+	var at := []
+	var d := 3.0
+	while d <= e.len - 3.0:
+		at.append(d); d += 6.0
+	if at.is_empty():
+		at.append(e.len / 2.0)
+	for a in at:
+		var r := _at(e, a)
+		var p: Vector2 = r[0]
+		var fwd: Vector2 = r[1]
+		var right := Vector2(-fwd.y, fwd.x)
+		var c := Vector2i(floori(p.x / TRAM_CELL), floori(p.y / TRAM_CELL))
+		var best := INF
+		var side := 0.0
+		for dx in range(-1, 2):
+			for dy in range(-1, 2):
+				for x in _tram_cells.get(c + Vector2i(dx, dy), []):
+					if x == e.id: continue
+					var o: Dictionary = edges[x]
+					var op: PackedVector2Array = o.p
+					for i in op.size() - 1:
+						var q := Geometry2D.get_closest_point_to_segment(p, op[i], op[i + 1])
+						var dist := q.distance_to(p)
+						if dist < best and dist >= TRAM_PAIR[0] and dist <= TRAM_PAIR[1] \
+								and absf((op[i + 1] - op[i]).normalized().dot(fwd)) > 0.85:
+							best = dist; side = (q - p).dot(right)
+		if best < INF:
+			vote += 1 if side < 0.0 else -1     # the other track on the left: run it this way
+	e.way = signi(vote) if absi(vote) >= 2 or (absi(vote) >= 1 and e.len < 15.0) else 0
+	return e.way
+
+
+# At the end of a one-way track: over on to the track back, beside it (as
+# round a terminus loop): 1. -1 while another tram is just there on it (wait);
+# 0 when there is no such track (it turns round instead).
+func _turn_tram(v: Dictionary) -> int:
+	var e: Dictionary = edges[v.edge]
+	if v.kind != "tram" or v.get("driven", false) or tram_way(e) == 0:
+		return 0
+	var f := _front(v)
+	var p: Vector2 = f[0]
+	var c := Vector2i(floori(p.x / TRAM_CELL), floori(p.y / TRAM_CELL))
+	var best := 9.0
+	var pick := []
+	for dx in range(-1, 2):
+		for dy in range(-1, 2):
+			for x in _tram_cells.get(c + Vector2i(dx, dy), []):
+				var o: Dictionary = edges[x]
+				var way := tram_way(o)
+				if x == v.edge or way == 0: continue
+				var op: PackedVector2Array = o.p
+				for i in op.size() - 1:
+					var q := Geometry2D.get_closest_point_to_segment(p, op[i], op[i + 1])
+					var seg := (op[i + 1] - op[i]).normalized() * way
+					if q.distance_to(p) < best and seg.dot(f[1]) < -0.85:
+						best = q.distance_to(p)
+						var along: float = o.cum[i] + op[i].distance_to(q)
+						pick = [x, way, along if way == 1 else o.len - along]
+	if pick.is_empty():
+		return 0
+	# Room on it: a tram's length past the one ahead, and one coming up behind
+	# able to stop short of us.
+	for o in vehicles:
+		if o == v or o.kind != "tram" or o.edge != pick[0]:
+			continue
+		var ahead: float = float(o.s) - float(pick[2])
+		var stop: float = o.speed * o.speed / (2.0 * KINDS.tram.accel * 2.5)
+		if (ahead >= 0.0 and ahead < KINDS.tram.len + 6.0) or (ahead < 0.0 and -ahead < KINDS.tram.len + 6.0 + stop + 10.0):
+			return -1
+	v.edge = pick[0]; v.dir = pick[1]; v.s = pick[2]
+	return 1
+
+
 func _usable(kind: String, e: Dictionary) -> bool:
 	if kind == "tram": return e.kind == "tram"
 	if kind == "bike": return e.kind == "bike" or (e.kind == "road" and e.w < 12.0)
@@ -165,7 +275,10 @@ func _spawn(kind: String) -> void:
 		var dist := mid.distance_to(Vector2(focus.x, focus.z))
 		if dist > spawn_radius or dist < 60.0:
 			continue
-		var v := {"kind": kind, "edge": e.id, "dir": 1 if _rng.randf() < 0.5 else -1,
+		var dir := 1 if _rng.randf() < 0.5 else -1
+		if kind == "tram" and tram_way(e) != 0:
+			dir = tram_way(e)
+		var v := {"kind": kind, "edge": e.id, "dir": dir,
 			"s": _rng.randf_range(spec.len + 1.0, e.len - 1.0), "speed": spec.max * 0.6, "stuck": 0.0, "ghost": 0.0,
 			"stop_in": _rng.randf_range(150, 400), "dwell": 0.0, "trail": []}
 		var f := _front(v)
@@ -360,6 +473,9 @@ func _next(v: Dictionary) -> bool:
 		var ne: Dictionary = edges[x[0]]
 		if not _usable(v.kind, ne): continue
 		var ndir := 1 if x[1] == 0 else -1
+		if v.kind == "tram" and not v.get("driven", false):
+			var way := tram_way(ne)
+			if way != 0 and way != ndir: continue     # the other line's track
 		var start := _at(ne, 0.0 if ndir == 1 else ne.len)
 		var turn: float = heading.dot(start[1] * ndir)
 		options.append([x[0], ndir, turn])
@@ -444,16 +560,33 @@ func _drive(v: Dictionary, dt: float) -> void:
 		want = spec.max * 1.5 * clampf(1.0 - bend / 1.6, 0.45, 1.0)   # on a call: fast, and through the others
 		v.ghost = 1.0
 	# Keep a gap to anything in front: other vehicles and the walker.
+	# (A tram never goes through another tram, ghosting or not.)
 	var gap := 1e9
-	if v.ghost <= 0.0:
-		for o in vehicles:
-			if o == v: continue
-			if (o.kind == "bike") != (v.kind == "bike"): continue   # bikes keep to their own edge of the street
-			var d: Vector2 = o.pos - v.pos
-			var along := d.dot(fwd)
-			if along <= 0.0 or along > 40.0: continue
-			if absf(d.cross(fwd)) > 2.4: continue
-			gap = minf(gap, along - KINDS[o.kind].len * 0.5 - 2.0)
+	var olen_tram: float = KINDS.tram.len
+	for o in vehicles:
+		if o == v: continue
+		if v.ghost > 0.0 and not (v.kind == "tram" and o.kind == "tram"): continue
+		if (o.kind == "bike") != (v.kind == "bike"): continue   # bikes keep to their own edge of the street
+		# The tram on the other track, coming the other way, is no obstacle.
+		if v.kind == "tram" and o.kind == "tram" and o.edge != v.edge \
+				and Vector2(-sin(o.get("yaw", 0.0)), -cos(o.get("yaw", 0.0))).dot(fwd) < 0.0:
+			continue
+		if v.kind == "tram" and o.kind == "tram" and o.edge == v.edge and o.dir == v.dir:
+			if o.s > v.s:                      # on the same rails: measured along them, round bends too
+				gap = minf(gap, o.s - v.s - olen_tram - 2.0)
+			continue
+		if v.kind == "tram" and o.kind == "tram" and edges.has(o.edge):
+			var oe: Dictionary = edges[o.edge]
+			if oe.ends[0 if o.dir == 1 else 1] == e.ends[1 if v.dir == 1 else 0]:
+				gap = minf(gap, e.len - v.s + o.s - olen_tram - 2.0)   # just over the points ahead
+				continue
+		# Its position is its front (a knocked car's, the middle of its body).
+		var olen: float = KINDS[o.kind].len * (0.5 if o.has("body") else 1.0)
+		var d: Vector2 = o.pos - v.pos
+		var along := d.dot(fwd)
+		if along <= 0.0 or along > 40.0 + olen: continue
+		if absf(d.cross(fwd)) > 2.4: continue
+		gap = minf(gap, along - olen - 2.0)
 	var pp: Vector2 = Vector2(player.x, player.z) - v.pos
 	if pp.dot(fwd) > 0.0 and pp.dot(fwd) < 25.0 and absf(pp.cross(fwd)) < 2.6:
 		gap = minf(gap, pp.dot(fwd) - 3.0)
@@ -470,6 +603,7 @@ func _drive(v: Dictionary, dt: float) -> void:
 		if absf(lat) < room or (absf(lat) < 6.0 and (absf(then) < room or signf(then) != signf(lat))):
 			gap = minf(gap, along - PED_STOP)
 	want = minf(want, maxf(0.0, (gap - 1.0) / 1.3))
+	want = minf(want, sqrt(2.0 * spec.accel * 2.0 * maxf(0.0, gap - 1.0)))   # and able to stop in it
 	# Buses and trams stop now and then, as if at a stop.
 	if v.kind == "bus" or v.kind == "tram":
 		v.stop_in -= v.speed * dt
@@ -490,8 +624,10 @@ func _drive(v: Dictionary, dt: float) -> void:
 	# Stuck behind something that is stuck behind us: one of us goes first.
 	if v.speed < 0.2 and want < 0.2 and v.dwell <= 0.0:
 		v.stuck += dt
-		if v.stuck > 5.0:
+		if v.stuck > 5.0 and v.kind != "tram":
 			v.ghost = 2.5; v.stuck = 0.0
+		elif v.stuck > 30.0 and v.pos.distance_to(Vector2(focus.x, focus.z)) > 120.0 and not _occupied(v):
+			_despawn(v); return                 # trams wait their turn; one jammed out of sight is taken off
 	else:
 		v.stuck = 0.0
 	v.ghost = maxf(0.0, v.ghost - dt)
@@ -500,9 +636,17 @@ func _drive(v: Dictionary, dt: float) -> void:
 	var guard := 0
 	while v.s > edges[v.edge].len and guard < 4:
 		var over: float = v.s - edges[v.edge].len
-		if not _next(v):
+		var turn := 2 if _next(v) else _turn_tram(v)
+		if turn == 2:
+			v.s = over
+		elif turn == 1:
+			v.s += over
+		elif turn == -1:
+			v.s = edges[v.edge].len; v.speed = 0.0   # the track back is not clear yet: wait at the end
+			break
+		else:
 			v.dir = -v.dir                  # dead end: turn round
-		v.s = over
+			v.s = over
 		guard += 1
 	f = _front(v)
 	v.pos = f[0]
