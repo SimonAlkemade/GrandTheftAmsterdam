@@ -18,11 +18,14 @@ const Models := preload("res://scripts/vehicle_models.gd")
 const Minimap := preload("res://scripts/minimap.gd")
 const Mission := preload("res://scripts/mission.gd")
 const Boats := preload("res://scripts/boats.gd")
+const Crime := preload("res://scripts/crime.gd")
+const CrimeHud := preload("res://scripts/crime_hud.gd")
 
 var mats
 var streamer
 var traffic
 var boats
+var crime
 var cam: Camera3D
 var walker
 var mission
@@ -89,6 +92,10 @@ func _ready() -> void:
 	mission = Mission.new()
 	add_child(mission)
 	mission.setup(streamer, traffic, walker)
+	crime = Crime.new()
+	add_child(crime)
+	crime.setup(streamer, traffic, walker, mission)
+	walker.crime = crime
 
 	_ui()
 	_set_hour(hour)
@@ -269,7 +276,7 @@ func _hud() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
 	var mm := Minimap.new()
-	mm.streamer = streamer; mm.traffic = traffic; mm.walker = walker; mm.boats = boats
+	mm.streamer = streamer; mm.traffic = traffic; mm.walker = walker; mm.boats = boats; mm.crime = crime
 	mm.anchor_top = 1.0; mm.anchor_bottom = 1.0
 	layer.add_child(mm)
 	mm.offset_left = 22; mm.offset_right = 22 + Minimap.SIZE
@@ -283,7 +290,7 @@ func _hud() -> void:
 	hint.add_theme_font_size_override("font_size", 13)
 	hint.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
 	hint.add_theme_constant_override("outline_size", 4)
-	hint.position = Vector2(20, 16)
+	hint.position = Vector2(20, 56)              # under the wanted stars
 	hint.visible = false
 	layer.add_child(hint)
 	ui.walk_hint = hint
@@ -364,13 +371,31 @@ func _mission_hud(layer: CanvasLayer) -> void:
 		ui["big_" + k[0]] = l
 	ui.big = big
 	big.modulate.a = 0.0
-	mission.announce.connect(func(title, sub):
+	var say := func(title, sub):
 		ui.big_title.text = title
 		ui.big_sub.text = sub
+		ui.big_title.add_theme_color_override("font_color", Color(0.95, 0.2, 0.2) if title == "BUSTED" else Color(1.0, 0.82, 0.08))
 		big.modulate.a = 1.0
 		var tw := create_tween()
 		tw.tween_interval(3.0)
-		tw.tween_property(big, "modulate:a", 0.0, 0.8))
+		tw.tween_property(big, "modulate:a", 0.0, 0.8)
+	mission.announce.connect(say)
+	crime.announce.connect(say)
+	# Mission 2: its objective under the cash, the ammo, the stars and the crosshair.
+	var line := Label.new()
+	line.add_theme_font_size_override("font_size", 17)
+	line.add_theme_color_override("font_color", Color(0.75, 0.86, 1.0))
+	line.add_theme_color_override("font_outline_color", Color.BLACK)
+	line.add_theme_constant_override("outline_size", 6)
+	line.anchor_left = 1.0; line.anchor_right = 1.0
+	line.offset_left = -620; line.offset_right = -24; line.offset_top = 96
+	line.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	layer.add_child(line)
+	ui.crime_text = line
+	var hud := CrimeHud.new()
+	hud.crime = crime; hud.walker = walker
+	layer.add_child(hud)
 
 
 func _mission_ui() -> void:
@@ -385,6 +410,9 @@ func _mission_ui() -> void:
 		ui.mission_clock.add_theme_color_override("font_color", Color(1, 0.3, 0.25) if t < 15.0 else Color(1.0, 0.82, 0.08))
 	ui.cash.visible = mission.state != "off"
 	ui.cash.text = "€ %d\n%d parcel%s" % [mission.money, mission.delivered, "" if mission.delivered == 1 else "s"]
+	var ammo: String = crime.ammo_text()
+	ui.crime_text.visible = mode == "walk" and crime.state != "off"
+	ui.crime_text.text = crime.objective() + ("\n" + ammo if ammo != "" else "")
 	mission.show_route_3d(mode == "map")
 
 
@@ -481,6 +509,7 @@ func _process(delta: float) -> void:
 		ui.loading.visible = false
 		if mission.state == "off" and not args.has("nomission"):
 			mission.start()
+			crime.start()
 		return
 	var focus: Vector3
 	if mode == "walk":
@@ -537,6 +566,8 @@ func _process(delta: float) -> void:
 			_test_run()
 		if args.has("vehicle") and walker.active:
 			_test_vehicle(args.vehicle)
+		if args.has("crime") and walker.active:
+			_test_crime()
 		if args.has("mission") and (walker.active or _mis_step == 3):   # step 3 is in the map view
 			_test_mission()
 		if args.get("view") == "tram" and _follow == null and traffic.count().tram > 0 and _shot_t < 6.0:
@@ -727,6 +758,66 @@ func _test_mission() -> void:
 	elif _mis_step == 4 and _mis_t > 1.5:
 		print("mis: after the drop-off: state=%s delivered=%d money=%d carrying=%s" % [m.state, m.delivered, m.money, walker.carrying])
 		_mis_step = 5
+
+
+# --crime: walk into the gun shop, shoot at the nearest pedestrian, look at
+# the police arriving (<shot>-police.png), and let them arrest you.
+var _cr_t := 0.0
+var _cr_step := 0
+func _test_crime() -> void:
+	_cr_t += get_process_delta_time()
+	if _cr_step == 0 and crime.shop != Vector3.INF and _cr_t > 2.0:
+		walker.global_position = crime.shop
+		print("crime: at the shop (%s), money %d" % [crime.shop_name, mission.money])
+		_cr_step = 1; _cr_t = 0.0
+	elif _cr_step == 1 and _cr_t > 1.5:
+		print("crime: armed=%s ammo='%s'" % [crime.armed, crime.ammo_text()])
+		var best = null
+		for p in walker.peds:
+			if best == null or p.pos.distance_to(walker.global_position) < best.pos.distance_to(walker.global_position):
+				best = p
+		if best != null:
+			var d: Vector3 = best.pos - walker.global_position
+			walker.cam_yaw = atan2(-d.x, -d.z)
+			walker.cam_pitch = 0.05
+			walker._mouse_idle = 0.0
+		_cr_step = 2; _cr_t = 0.0
+	elif _cr_step == 2 and _cr_t > 1.0:
+		crime.fire()
+		print("crime: fired; stars=%d  objective='%s'" % [crime.stars, crime.objective()])
+		_cr_step = 3; _cr_t = 0.0
+	elif _cr_step == 3 and _cr_t > 0.6:
+		# Aim over the shoulder at the nearest pedestrian (the camera sits 0.6 m right).
+		var best = null
+		for p in walker.peds:
+			if not p.get("dead", false) and (best == null or p.pos.distance_to(walker.global_position) < best.pos.distance_to(walker.global_position)):
+				best = p
+		if best != null:
+			var right := Vector3(cos(walker.cam_yaw), 0, -sin(walker.cam_yaw))
+			var d: Vector3 = best.pos - (walker.global_position + right * 0.6)
+			walker.cam_yaw = atan2(-d.x, -d.z)
+			walker.cam_pitch = 0.02
+		_cr_step = 31; _cr_t = 0.0
+	elif _cr_step == 31 and _cr_t > 0.8:             # the camera has turned: fire
+		crime.fire()
+		get_viewport().get_texture().get_image().save_png(String(args.shot).replace(".png", "-shot.png"))
+		print("crime: second shot; stars=%d, a pedestrian down: %s" % [crime.stars, walker.peds.any(func(p): return p.get("dead", false))])
+		_cr_step = 4; _cr_t = 0.0
+	elif _cr_step == 4:
+		if Engine.get_process_frames() % 4 == 0:
+			for c in crime.cops:
+				print("crime:   cop at %s, %.0f m from you, sees=%s route=%d down=%s" % [c.pos.snapped(Vector3.ONE), c.pos.distance_to(walker.global_position), c.get("sees", false), c.get("route", PackedVector2Array()).size(), c.down])
+		if crime.cops.size() > 0 and _cr_t > 12.0 or _cr_t > 60.0:
+			var c: Dictionary = crime.cops[0] if crime.cops.size() else {}
+			if not c.is_empty():
+				var d: Vector3 = c.pos - walker.global_position
+				walker.cam_yaw = atan2(d.x, d.z)      # camera behind you, the police in front
+			get_viewport().get_texture().get_image().save_png(String(args.shot).replace(".png", "-police.png"))
+			print("crime: %d police cars, %d officers after %.0f s; stars=%d seen=%s" % [crime.cars.size(), crime.cops.size(), _cr_t, crime.stars, crime.seen])
+			_cr_step = 5; _cr_t = 0.0
+	elif _cr_step == 5 and (crime.stars == 0 or _cr_t > 40.0):
+		print("crime: after %.0f s: stars=%d armed=%s money=%d" % [_cr_t, crime.stars, crime.armed, mission.money])
+		_cr_step = 6
 
 
 func _beside(v: Dictionary, cab := false) -> void:

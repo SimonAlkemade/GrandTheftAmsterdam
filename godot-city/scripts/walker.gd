@@ -39,6 +39,8 @@ var cam_dist := 5.5
 var peds: Array = []
 var traffic
 var boats                      # the moored sloepen (Boats)
+var crime                      # Mission 2: the pistol, the wanted level, the police (Crime)
+var _gun: MeshInstance3D
 var vehicle = null             # the traffic vehicle you are in, or null
 var prompt := ""               # what E does right now, for the HUD
 var car_yaw := 0.0
@@ -70,6 +72,14 @@ func setup(s, camera: Camera3D) -> void:
 	_parcel.position = Vector3(0, 1.08, -0.34)
 	_parcel.visible = false
 	body.add_child(_parcel)
+	# The pistol, in the right hand (along the forearm: aimed, it points ahead).
+	_gun = MeshInstance3D.new()
+	var gb := BoxMesh.new(); gb.size = Vector3(0.04, 0.2, 0.11)
+	var gm := StandardMaterial3D.new(); gm.albedo_color = Color("1c1d20"); gm.metallic = 0.6; gm.roughness = 0.4
+	_gun.mesh = gb; _gun.material_override = gm
+	_gun.position = Vector3(0, -0.36, -0.05)
+	_gun.visible = false
+	body.el_r.add_child(_gun)
 	visible = false
 
 
@@ -115,6 +125,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		else:
 			_get_in()
 		return
+	# The pistol: left click shoots (the mouse captured, on foot), R reloads.
+	if crime and crime.armed and vehicle == null and state != "swim" and state != "climb":
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT \
+				and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+			crime.fire()
+			return
+		if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_R:
+			crime.reload()
+			return
 	if event is InputEventMouseMotion and (Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or event.button_mask & MOUSE_BUTTON_MASK_RIGHT):
 		_mouse_idle = 0.0
 		cam_yaw -= event.relative.x * 0.0042
@@ -237,6 +256,14 @@ func _physics_process(delta: float) -> void:
 		body.sh_l.rotation.z = 0.3; body.sh_r.rotation.z = -0.3   # hands in towards the middle
 	else:
 		body.sh_l.rotation.z = 0.08; body.sh_r.rotation.z = -0.08
+	# Armed: the pistol in hand; just after a shot (or holding the right
+	# button) you aim it where the camera looks.
+	var armed: bool = crime != null and crime.armed and state != "swim" and state != "climb"
+	_gun.visible = armed
+	if armed and (crime.aim_t < 1.2 or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)):
+		heading = lerp_angle(heading, cam_yaw, minf(1.0, delta * 16.0))
+		body.rotation.y = heading
+		body.sh_r.rotation.x = 1.5; body.el_r.rotation.x = 0.05; body.sh_r.rotation.z = -0.05
 	_peds(delta)
 	_camera(delta)
 
@@ -245,6 +272,10 @@ func _camera(delta: float) -> void:
 	var head := global_position + Vector3(0, 1.55, 0)
 	if state == "swim": head.y = SWIM_Y + 2.3
 	var reach := cam_dist
+	if vehicle == null and crime and crime.armed and (crime.aim_t < 1.2 or Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)):
+		# Aiming: over your right shoulder, closer, so the crosshair is clear of you.
+		head += Vector3(cos(cam_yaw), 0, -sin(cam_yaw)) * 0.6
+		reach = minf(reach, 3.4)
 	if vehicle != null:
 		var vc: Array = VEHICLE_CAM[vehicle.kind]
 		head = Vector3(global_position.x, global_position.y + vc[0], global_position.z)
@@ -631,9 +662,28 @@ func _peds(delta: float) -> void:
 	var your_vel := Vector2(-sin(heading), -cos(heading)) * speed
 	var cars := _vehicle_segments()
 	for p in peds:
+		if p.get("dead", false):
+			continue                              # shot: lying where they fell (Crime)
 		if p.pos.distance_to(global_position) > 85.0:
 			_place(p, false)
 		var h: Node3D = p.h
+		if p.get("flee", 0.0) > 0.0:
+			# Running from a gunshot: away from it, fast.
+			p.flee -= delta
+			var away: Vector3 = p.pos - p.flee_from; away.y = 0.0
+			var aim := atan2(-away.x, -away.z)
+			p.heading += clampf(wrapf(aim - p.heading, -PI, PI), -5.0 * delta, 5.0 * delta)
+			var ff := Vector3(-sin(p.heading), 0, -cos(p.heading))
+			if _free(p.pos + ff * 1.2):
+				p.pos += ff * 4.4 * delta
+			else:
+				for t in [0.8, -0.8, 1.6, -1.6]:
+					var hh: float = p.heading + t
+					if _free(p.pos + Vector3(-sin(hh), 0, -cos(hh)) * 1.2):
+						p.heading = hh; break
+			p.pace = 4.4
+			h.animate(delta, "run", 4.4)
+			continue
 		if p.stag > 0.0:
 			p.stag -= delta
 			h.animate(delta, "idle", 0.0)
@@ -652,7 +702,7 @@ func _peds(delta: float) -> void:
 			if vehicle == null:
 				others.append([you, your_vel, YOU_CLEAR, YOU_SPACE, 2.0])   # in a vehicle, you are its body below
 			for o in peds:
-				if o != p:
+				if o != p and not o.get("dead", false):
 					others.append([Vector2(o.pos.x, o.pos.z), Vector2(-sin(o.heading), -cos(o.heading)) * float(o.speed), PED_CLEAR, PED_SPACE, 1.0])
 			for o in others:
 				var rel: Vector2 = o[0] - me              # where it is, from here
@@ -733,8 +783,12 @@ func _peds(delta: float) -> void:
 	# Nobody overlaps: push pairs apart, and everyone out of your way.
 	for i in peds.size():
 		var a: Dictionary = peds[i]
+		if a.get("dead", false):
+			continue
 		for j in range(i + 1, peds.size()):
 			var b: Dictionary = peds[j]
+			if b.get("dead", false):
+				continue
 			var d: Vector3 = a.pos - b.pos; d.y = 0.0
 			if d.length() < PED_GAP:
 				var n := d.normalized() if d.length() > 0.001 else Vector3(1, 0, 0)
@@ -750,11 +804,15 @@ func _peds(delta: float) -> void:
 	if traffic:
 		var seen := []
 		for p in peds:
+			if p.get("dead", false):
+				continue                         # nobody brakes for... well
 			var pace: float = p.get("pace", 0.0) if p.stag <= 0.0 else 0.0   # as fast as they really walk (0 waiting at the kerb)
 			seen.append([Vector2(p.pos.x, p.pos.z), Vector2(-sin(p.heading), -cos(p.heading)) * pace])
 		traffic.pedestrians = seen
 	# ... and nobody stands inside a car, bus, tram or bike.
 	for a in peds:
+		if a.get("dead", false):
+			continue
 		for sg in cars:
 			var me := Vector2(a.pos.x, a.pos.z)
 			var c := Geometry2D.get_closest_point_to_segment(me, sg[0], sg[1])
@@ -766,5 +824,10 @@ func _peds(delta: float) -> void:
 				a.pos = Vector3(to.x, a.pos.y, to.y)
 	for p in peds:
 		var gy = _ground(p.pos)
-		p.h.position = Vector3(p.pos.x, gy if gy != null else 0.0, p.pos.z)
-		p.h.rotation.y = p.heading
+		var y: float = gy if gy != null else 0.0
+		if p.get("dead", false):                   # on their back
+			p.h.position = Vector3(p.pos.x, y + 0.18, p.pos.z)
+			p.h.rotation = Vector3(-PI / 2, p.heading, 0)
+			continue
+		p.h.position = Vector3(p.pos.x, y, p.pos.z)
+		p.h.rotation = Vector3(0, p.heading, 0)

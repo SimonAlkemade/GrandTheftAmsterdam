@@ -20,6 +20,7 @@ macOS, Windows and Linux.
 | Mouse (click to capture) / right-drag / two-finger swipe | look |
 | Wheel | camera distance |
 | E | get in or out of the car, Canta, bike, bus, tram or boat next to you |
+| Left click / R | shoot / reload the pistol (Mission 2) |
 | M (or Tab, G) | switch to the map |
 | Esc | free the mouse |
 
@@ -85,6 +86,30 @@ route along the streets is drawn in yellow on the minimap and, in the map
 view (M), over the streets themselves. Each delivery has a clock set by the
 length of the route and pays €25 plus €1 for every 6 seconds to spare; then
 the next parcel is waiting. Run out of time and the parcel goes back.
+
+## Mission 2: a gun, and the police
+
+You start with €60, and a gun shop (a blue circle with WAPENS over it, a blue
+blip on the minimap) stands on a pavement near the Dam. Walk in and a pistol
+is yours for €50: 12 rounds in it and 24 more. On foot, **left click** shoots
+where the camera looks (a crosshair shows while you hold it; you turn to aim),
+**R** reloads, and back at the shop €10 buys 24 more rounds. Bullets stop at
+walls, the street and vehicles (a real vehicle takes the knock); a pedestrian
+hit goes down, and everyone within 40 m runs from the shot.
+
+Shooting makes you wanted, shown as five stars at the top left: any shot is
+one star, hitting someone two, hitting a police officer three and up, to five.
+Police cars in the Dutch livery (white, the blue and orange stripes, POLITIE,
+the blue lights flashing) are sent one at a time, a car per star up to four;
+they drive along the streets, at every junction towards where they last saw
+you, and stop near you. Two officers get out of each and run there (4.6 m/s:
+you can outrun them; 6.2 running). One who reaches you on foot, or in a
+vehicle standing still, arrests you: **BUSTED**, a €100 fine (or what you
+have) and the pistol gone. While no officer can see you (nothing built in the
+way, within 70 m) the stars flash; stay out of sight 10 s plus 5 s a star and
+they give up. `tests/crime_test.gd` plays it through on a grid of test streets:
+
+    godot --headless --path godot-city --script tests/crime_test.gd
 
 ## Driving physics
 

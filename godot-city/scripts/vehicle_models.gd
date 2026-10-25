@@ -61,6 +61,33 @@ static func car(color: Color) -> Node3D:
 	return n
 
 
+# A Dutch police car: white, the blue band and red-orange stripe of the
+# Politie livery, POLITIE on the doors and the bonnet, and a light bar whose
+# two halves flash (`flash_police`) while it is on a call.
+static func police_car() -> Node3D:
+	var n := car(Color("f4f5f6"))
+	var blue := mat("politie_blue", Color("1a3d8f"), 0.4, 0.2)
+	var orange := mat("politie_orange", Color("e5522a"), 0.4, 0.1)
+	for x in [-1, 1]:
+		box(n, Vector3(0.02, 0.2, 3.9), Vector3(x * 0.9, 0.6, 0), blue)
+		box(n, Vector3(0.02, 0.06, 3.9), Vector3(x * 0.9, 0.75, 0), orange)
+		sign_text(n, "POLITIE", Vector3(x * 0.915, 0.6, 0.2), x * PI / 2, 1.3, 0.13, Color("ffffff"), true)
+	sign_text(n, "POLITIE", Vector3(0, 0.935, -1.4), 0.0, 0.9, 0.12, Color("1a3d8f"), true).rotation = Vector3(-PI / 2, PI, 0)
+	box(n, Vector3(1.1, 0.1, 0.32), Vector3(0, 1.57, 0.2), mat("beacon_base", Color("222428"), 0.5))
+	box(n, Vector3(0.5, 0.1, 0.28), Vector3(-0.27, 1.64, 0.2), mat("beacon_a", Color("0a1f6e"), 0.3, 0.0, Color("3a6bff")))
+	box(n, Vector3(0.5, 0.1, 0.28), Vector3(0.27, 1.64, 0.2), mat("beacon_b", Color("0a1f6e"), 0.3, 0.0, Color("3a6bff")))
+	return n
+
+
+## Flash every police car's light bar: the two halves in turn.
+static func flash_police(t: float, on: bool) -> void:
+	if not _mats.has("beacon_a"):
+		return
+	var a := fmod(t * 3.0, 1.0) < 0.5
+	(_mats.beacon_a as StandardMaterial3D).emission_energy_multiplier = (6.0 if a else 0.2) if on else 0.2
+	(_mats.beacon_b as StandardMaterial3D).emission_energy_multiplier = (0.2 if a else 6.0) if on else 0.2
+
+
 # A Canta, the narrow Dutch microcar (blender/make_canta.py), in red.
 static var _canta: PackedScene
 

@@ -17,6 +17,7 @@ const DOT := {"car": 4.5, "bus": 7.0, "tram": 7.0, "bike": 2.6, "canta": 3.5, "b
 var streamer
 var traffic
 var boats
+var crime                            # the police and the gun shop show here too
 var walker
 var mission                          # the current job: its route and target show here
 var _tris: Array = []
@@ -77,7 +78,15 @@ func _draw_map() -> void:
 		_map.draw_polyline(mission.route, MISSION, 7.0, true)
 	for v in traffic.vehicles:
 		if v.pos.distance_to(p) < VIEW + 10.0:
-			_map.draw_circle(v.pos, DOT[v.kind], VEHICLE[v.kind])
+			if v.get("police", false):         # a police car on a call: flashing red and blue
+				var on := fmod(Time.get_ticks_msec() / 1000.0, 0.5) < 0.25
+				_map.draw_circle(v.pos, DOT.car + 2.0, Color(0.15, 0.35, 1.0) if on else Color(1.0, 0.15, 0.15))
+			else:
+				_map.draw_circle(v.pos, DOT[v.kind], VEHICLE[v.kind])
+	if crime:
+		for c in crime.cops:
+			if not c.down and Vector2(c.pos.x, c.pos.z).distance_to(p) < VIEW + 10.0:
+				_map.draw_circle(Vector2(c.pos.x, c.pos.z), 3.2, Color(0.2, 0.45, 1.0))
 	if boats:
 		for b in boats.boats:             # boats: a white dot ringed in canal blue
 			if b.pos.distance_to(p) < VIEW + 10.0:
@@ -100,6 +109,14 @@ func _draw_top() -> void:
 			on = on.normalized() * (SIZE / 2.0 - 16.0)
 		_top.draw_circle(c + on, 10.0 if not far else 8.0, Color(0, 0, 0, 0.7))
 		_top.draw_circle(c + on, 7.5 if not far else 6.0, MISSION)
+	# The gun shop: a blue blip, held on the rim while it is out of range.
+	if crime and crime.shop != Vector3.INF and (crime.state == "shop" or crime.armed and crime.rounds < crime.START_ROUNDS):
+		var ds := Vector2(crime.shop.x, crime.shop.z) - Vector2(walker.global_position.x, walker.global_position.z)
+		var os := ds.rotated(walker.cam_yaw) * ((SIZE / 2.0) / VIEW)
+		if os.length() > SIZE / 2.0 - 16.0:
+			os = os.normalized() * (SIZE / 2.0 - 16.0)
+		_top.draw_circle(c + os, 8.5, Color(0, 0, 0, 0.7))
+		_top.draw_circle(c + os, 6.0, crime.BLUE)
 	var north := c + Vector2(0, -1).rotated(walker.cam_yaw) * (SIZE / 2.0 - 14.0)
 	_top.draw_circle(north, 10.0, Color("1b1e22"))
 	_top.draw_string(get_theme_default_font(), north + Vector2(-5, 5), "N", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color.WHITE)

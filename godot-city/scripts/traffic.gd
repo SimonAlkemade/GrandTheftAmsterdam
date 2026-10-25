@@ -65,6 +65,9 @@ var nodes := {}        # Vector2i -> Array[[edge id, end]]
 var by_kind := {"road": [], "tram": [], "bike": []}
 var vehicles: Array = []
 var _next_id := 0
+var _field := {}                # a police call's streets: node -> metres by road to the call
+var _field_to := Vector2.INF
+var _field_near := CALL_NEAR    # how near the street ends it was seeded from are
 var _rng := RandomNumberGenerator.new()
 
 
@@ -190,7 +193,7 @@ func _build_model(v: Dictionary) -> void:
 	v.parts = []
 	match v.kind:
 		"car":
-			var c: Node3D = Models.car(Color(CAR_COLORS[_rng.randi() % CAR_COLORS.size()]))
+			var c: Node3D = Models.police_car() if v.get("police", false) else Models.car(Color(CAR_COLORS[_rng.randi() % CAR_COLORS.size()]))
 			Models.solid(c, Vector3(1.8, 1.3, 4.2), 0.75)
 			root.add_child(c); v.parts.append([c, 0.0, 4.2])
 		"bus":
@@ -224,6 +227,121 @@ func _build_model(v: Dictionary) -> void:
 	v.node = root
 
 
+## A police car on its way to `to`: it starts on a street 70-180 m away and
+## drives fast along the network, at every junction taking the branch that
+## heads most towards `to` (keep it up to date in v.chase). {} if no street
+## fits yet.
+const CALL_NEAR := 60.0        # street ends this close to a police call count as there (or the nearest)
+
+
+## How far each street end is from `to` by road (Dijkstra out from the ends
+## within CALL_NEAR of it, starting at their straight-line distance). Kept
+## until the call moves.
+func chase_field(to: Vector2) -> Dictionary:
+	if _field_to.distance_to(to) < 10.0 and not _field.is_empty():
+		return _field
+	_field_to = to
+	var dist := {}
+	var heap := []
+	# Seeded from the street ends nearest it (a square like the Dam has no
+	# road in it): those within CALL_NEAR, or within 30 m of the nearest.
+	var near := {}
+	var nearest := INF
+	for k in nodes:
+		var d := (Vector2(k) / SNAP).distance_to(to)
+		if d < nearest + 30.0 and nodes[k].any(func(x): return _usable("car", edges[x[0]])):
+			near[k] = d
+			nearest = minf(nearest, d)
+	_field_near = maxf(CALL_NEAR, nearest + 30.0)
+	for k in near:
+		if near[k] <= _field_near:
+			dist[k] = near[k]
+			_heap_push(heap, [near[k], k])
+	while heap.size():
+		var top: Array = _heap_pop(heap)
+		var k: Vector2i = top[1]
+		if top[0] > dist[k] + 0.01:
+			continue
+		for x in nodes.get(k, []):
+			var e: Dictionary = edges[x[0]]
+			if not _usable("car", e):
+				continue
+			var n: Vector2i = e.ends[1 - x[1]]
+			var c: float = top[0] + e.len
+			if c < dist.get(n, INF):
+				dist[n] = c
+				_heap_push(heap, [c, n])
+	_field = dist
+	return dist
+
+
+func _heap_push(h: Array, item: Array) -> void:
+	h.append(item)
+	var i := h.size() - 1
+	while i > 0:
+		var up := (i - 1) / 2
+		if h[up][0] <= h[i][0]:
+			break
+		var t = h[up]; h[up] = h[i]; h[i] = t
+		i = up
+
+
+func _heap_pop(h: Array) -> Array:
+	var top: Array = h[0]
+	var last: Array = h.pop_back()
+	if h.size():
+		h[0] = last
+		var i := 0
+		while true:
+			var l := i * 2 + 1
+			var m := i
+			if l < h.size() and h[l][0] < h[m][0]: m = l
+			if l + 1 < h.size() and h[l + 1][0] < h[m][0]: m = l + 1
+			if m == i:
+				break
+			var t = h[m]; h[m] = h[i]; h[i] = t
+			i = m
+	return top
+
+
+func spawn_police(to: Vector2) -> Dictionary:
+	var spec: Dictionary = KINDS.car
+	# The streets 60-220 m by road from the call (joined to it: the loaded
+	# streets have islands a car could never get out of).
+	var field := chase_field(to)
+	var pool := []
+	for id in by_kind["road"]:
+		var ce: Dictionary = edges[id]
+		if ce.len >= spec.len + 6.0 and _usable("car", ce):
+			var dr := minf(field.get(ce.ends[0], INF), field.get(ce.ends[1], INF))
+			if dr > 60.0 and dr < 220.0:
+				pool.append(id)
+	if pool.is_empty():
+		return {}
+	for attempt in 10:
+		var e: Dictionary = edges[pool[_rng.randi() % pool.size()]]
+		var s := _rng.randf_range(spec.len + 1.0, e.len - 1.0)
+		var mid: Vector2 = _at(e, s)[0]
+		if blocked(mid, {}):
+			continue
+		# Head the way that is shorter by road to `to`.
+		var dir := 1 if e.len - s + float(field.get(e.ends[1], 1e6)) <= s + float(field.get(e.ends[0], 1e6)) else -1
+		var v := {"kind": "car", "edge": e.id, "dir": dir, "s": s if dir == 1 else e.len - s, "speed": spec.max, "stuck": 0.0,
+			"ghost": 0.0, "stop_in": 1e9, "dwell": 0.0, "trail": [], "police": true, "chase": to}
+		var f := _front(v)
+		v.pos = f[0]
+		var back := 0.0
+		while back <= spec.len + 2.0:
+			var vv := v.duplicate(); vv.s = v.s - back
+			v.trail.append(_front(vv)[0])
+			back += 0.5
+		v.trail.reverse()
+		_build_model(v)
+		vehicles.append(v)
+		return v
+	return {}
+
+
 func _despawn(v: Dictionary) -> void:
 	if is_instance_valid(v.node):
 		v.node.queue_free()
@@ -247,6 +365,21 @@ func _next(v: Dictionary) -> bool:
 		options.append([x[0], ndir, turn])
 	if options.is_empty():
 		return false
+	if v.has("chase"):
+		# A police car: the shortest way by road to the call. Once at a street
+		# end right by it, it has arrived.
+		var field := chase_field(v.chase)
+		if field.get(k, INF) <= _field_near:
+			v.there = true
+		var best = options[0]
+		var bd := INF
+		for o in options:
+			var ne: Dictionary = edges[o[0]]
+			var d: float = ne.len + float(field.get(ne.ends[1 if o[1] == 1 else 0], 1e6))
+			if d < bd:
+				bd = d; best = o
+		v.edge = best[0]; v.dir = best[1]
+		return true
 	if v.get("driven", false):
 		# At the points you choose: A the leftmost branch, D the rightmost, else
 		# the straightest. (A left turn has a negative cross product here.)
@@ -307,6 +440,9 @@ func _drive(v: Dictionary, dt: float) -> void:
 	var ahead := v.duplicate(); ahead.s = minf(v.s + 14.0, e.len)
 	var bend: float = acos(clampf(fwd.dot(_front(ahead)[1]), -1.0, 1.0))
 	var want: float = spec.max * clampf(1.0 - bend / 1.1, 0.3, 1.0)
+	if v.has("chase"):
+		want = spec.max * 1.5 * clampf(1.0 - bend / 1.6, 0.45, 1.0)   # on a call: fast, and through the others
+		v.ghost = 1.0
 	# Keep a gap to anything in front: other vehicles and the walker.
 	var gap := 1e9
 	if v.ghost <= 0.0:
