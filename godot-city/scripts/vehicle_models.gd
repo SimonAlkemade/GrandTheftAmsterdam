@@ -35,7 +35,7 @@ static func wheels(parent: Node3D, half_track: float, axles: Array, r := 0.33) -
 	for z in axles:
 		for x in [-half_track, half_track]:
 			var mi := MeshInstance3D.new(); mi.mesh = c; mi.material_override = mat("tyre", Color("161718"), 0.9)
-			mi.name = "wheel"
+			mi.name = "wheel%d" % parent.get_child_count()   # (unique: "wheel" twice would be renamed)
 			mi.rotation.z = PI / 2; mi.position = Vector3(x, r, z)
 			parent.add_child(mi)
 
@@ -114,6 +114,84 @@ static func solid(n: Node3D, size: Vector3, y: float) -> void:
 	var cs := CollisionShape3D.new(); cs.shape = s; cs.position.y = y
 	b.add_child(cs)
 	n.add_child(b)
+
+
+## Draw calls: every mesh of a model but its wheels merged into one mesh, a
+## surface per material (a tram of 115 boxes becomes one mesh of a dozen
+## surfaces). The merged mesh is kept under `key`, so the next model of the
+## same make and colour only swaps its meshes for it. Signs (Label3D), wheels
+## and collision stay as they are.
+static var _baked := {}
+
+static func bake(n: Node3D, key: String) -> void:
+	var parts := []                          # [MeshInstance3D, its transform in n]
+	_collect(n, Transform3D.IDENTITY, parts, true)
+	if parts.size() < 2:
+		return
+	var mesh: ArrayMesh = _baked.get(key)
+	if mesh == null:
+		mesh = _merge(parts)
+		_baked[key] = mesh
+	for p in parts:
+		p[0].get_parent().remove_child(p[0])
+		p[0].queue_free()
+	var mi := MeshInstance3D.new()
+	mi.name = "body"
+	mi.mesh = mesh
+	n.add_child(mi)
+	n.move_child(mi, 0)
+
+
+static func _collect(n: Node, xf: Transform3D, out: Array, top: bool) -> void:
+	for c in n.get_children():
+		if c is Node3D and String(c.name).begins_with("wheel"):
+			continue
+		if not (c is Node3D) or c is Label3D or c is CollisionObject3D:
+			continue
+		var cx: Transform3D = xf * (c as Node3D).transform
+		if c is MeshInstance3D and (c as MeshInstance3D).mesh != null:
+			out.append([c, cx])
+		_collect(c, cx, out, false)
+
+
+static func _merge(parts: Array) -> ArrayMesh:
+	var by_mat := {}                         # material -> [verts, normals, uvs, indices]
+	for p in parts:
+		var mi: MeshInstance3D = p[0]
+		var xf: Transform3D = p[1]
+		var nb := xf.basis.inverse().transposed()
+		for i in mi.mesh.get_surface_count():
+			var m: Material = mi.material_override
+			if m == null: m = mi.get_surface_override_material(i)
+			if m == null: m = mi.mesh.surface_get_material(i)
+			var a := mi.mesh.surface_get_arrays(i)
+			var v: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
+			var nn = a[Mesh.ARRAY_NORMAL]
+			var uv = a[Mesh.ARRAY_TEX_UV]
+			var idx = a[Mesh.ARRAY_INDEX]
+			if not by_mat.has(m):
+				by_mat[m] = [PackedVector3Array(), PackedVector3Array(), PackedVector2Array(), PackedInt32Array()]
+			var b: Array = by_mat[m]
+			var base: int = b[0].size()
+			for k in v.size():
+				b[0].append(xf * v[k])
+				b[1].append((nb * (nn[k] as Vector3)).normalized() if nn != null and k < nn.size() else Vector3.UP)
+				b[2].append(uv[k] if uv != null and k < uv.size() else Vector2.ZERO)
+			if idx != null and (idx as PackedInt32Array).size():
+				for k in idx:
+					b[3].append(base + k)
+			else:
+				for k in v.size():
+					b[3].append(base + k)
+	var mesh := ArrayMesh.new()
+	for m in by_mat:
+		var b: Array = by_mat[m]
+		var arrays := []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = b[0]; arrays[Mesh.ARRAY_NORMAL] = b[1]; arrays[Mesh.ARRAY_TEX_UV] = b[2]; arrays[Mesh.ARRAY_INDEX] = b[3]
+		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		mesh.surface_set_material(mesh.get_surface_count() - 1, m)
+	return mesh
 
 
 ## Turn a vehicle's wheels (children named wheel...) for the distance it covered.

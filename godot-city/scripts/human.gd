@@ -43,21 +43,24 @@ func build(top: Color, legs: Color, skin: Color, hair: Color, shoe: Color, jacke
 	_part(hips, pelvis, ml, Vector3(0, 0.02, 0))
 	spine = _joint(hips, Vector3(0, 0.08, 0))
 	_part(spine, _capsule(0.17, 0.66), mj, Vector3(0, 0.26, 0), Vector3(1.25, 1, 0.75))
-	var neck := CylinderMesh.new(); neck.top_radius = 0.045; neck.bottom_radius = 0.05; neck.height = 0.1
-	_part(spine, neck, ms, Vector3(0, 0.55, 0))
+	# (Few segments: Godot's default sphere is 4,000 triangles, a whole person's
+	# worth many times over at the size of a hand.)
+	var neck := CylinderMesh.new(); neck.top_radius = 0.045; neck.bottom_radius = 0.05; neck.height = 0.1; neck.radial_segments = 8; neck.rings = 1
+	_part(spine, neck, ms, Vector3(0, 0.55, 0)).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	head = _joint(spine, Vector3(0, 0.66, 0))
-	var hs := SphereMesh.new(); hs.radius = 0.115; hs.height = 0.25
+	var hs := SphereMesh.new(); hs.radius = 0.115; hs.height = 0.25; hs.radial_segments = 12; hs.rings = 6
 	_part(head, hs, ms)
-	var hair_m := SphereMesh.new(); hair_m.radius = 0.122; hair_m.height = 0.2; hair_m.is_hemisphere = true
-	_part(head, hair_m, mh, Vector3(0, 0.03, 0.006))
+	var hair_m := SphereMesh.new(); hair_m.radius = 0.122; hair_m.height = 0.2; hair_m.is_hemisphere = true; hair_m.radial_segments = 12; hair_m.rings = 4
+	_part(head, hair_m, mh, Vector3(0, 0.03, 0.006)).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF   # (the head's shadow is enough)
 	var limb := func(parent: Node3D, x: float, y: float, r1: float, h1: float, m1: Material, r2: float, h2: float, m2: Material, knee: float, end_mesh: Mesh, end_m: Material) -> Array:
 		var a := _joint(parent, Vector3(x, y, 0))
 		_part(a, _capsule(r1, h1), m1, Vector3(0, -h1 / 2.0, 0))
 		var b := _joint(a, Vector3(0, knee, 0))
 		_part(b, _capsule(r2, h2), m2, Vector3(0, -h2 / 2.0, 0))
-		_part(b, end_mesh, end_m, Vector3(0, -h2 + 0.02, -0.04 if end_mesh is BoxMesh else 0.0))
+		# Hands and feet: too small to need a shadow of their own.
+		_part(b, end_mesh, end_m, Vector3(0, -h2 + 0.02, -0.04 if end_mesh is BoxMesh else 0.0)).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		return [a, b]
-	var hand := SphereMesh.new(); hand.radius = 0.045; hand.height = 0.1
+	var hand := SphereMesh.new(); hand.radius = 0.045; hand.height = 0.1; hand.radial_segments = 6; hand.rings = 3
 	var foot := BoxMesh.new(); foot.size = Vector3(0.1, 0.07, 0.24)
 	var l = limb.call(spine, -0.235, 0.47, 0.048, 0.32, mj, 0.042, 0.3, mj, -0.3, hand, ms); sh_l = l[0]; el_l = l[1]
 	l = limb.call(spine, 0.235, 0.47, 0.048, 0.32, mj, 0.042, 0.3, mj, -0.3, hand, ms); sh_r = l[0]; el_r = l[1]

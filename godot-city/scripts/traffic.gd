@@ -40,6 +40,9 @@ const TRAM_DOORS := [[-2.6, 2.9], [0.0], [-2.9, 2.6]]
 const SPRINGS := {
 	"car": [0.006, 0.015, 9.0], "canta": [0.009, 0.02, 10.0], "bus": [0.005, 0.02, 6.0], "tram": [0.0015, 0.005, 7.0],
 }
+const GRID := 50.0                # metres: the cells vehicles are sorted into each frame
+const FULL_NEAR := 180.0          # metres from the focus within which a vehicle moves every frame
+const FAR_EVERY := 3              # ...and beyond it, every this many frames (by the same distance)
 const SPRUNG_NEAR := 160.0        # metres from you within which bodies move on their springs
 const CAR_COLORS := ["1b1b1b", "f2f2f2", "8a8f94", "2c4a6e", "7a1e1e", "2f5d3a", "c9b48a", "d9d4c7", "0f2a4a", "b3261e", "4a4f55", "e8e8e8"]
 
@@ -66,6 +69,9 @@ var by_kind := {"road": [], "tram": [], "bike": []}
 var vehicles: Array = []
 var _next_id := 0
 var _tram_cells := {}           # 8 m cell -> tram edge ids passing through it
+var _grid := {}                 # Vector2i cell -> the vehicles in it (rebuilt each frame)
+var _frame := 0
+var _ped_box := Rect2()          # round everyone on foot, as far as a driver looks out for them
 var _field := {}                # a police call's streets: node -> metres by road to the call
 var _field_to := Vector2.INF
 var _field_near := CALL_NEAR    # how near the street ends it was seeded from are
@@ -306,21 +312,28 @@ func _build_model(v: Dictionary) -> void:
 	v.parts = []
 	match v.kind:
 		"car":
-			var c: Node3D = Models.police_car() if v.get("police", false) else Models.car(Color(CAR_COLORS[_rng.randi() % CAR_COLORS.size()]))
+			var col: String = CAR_COLORS[_rng.randi() % CAR_COLORS.size()]
+			var c: Node3D = Models.police_car() if v.get("police", false) else Models.car(Color(col))
+			Models.bake(c, "police" if v.get("police", false) else "car_" + col)
 			Models.solid(c, Vector3(1.8, 1.3, 4.2), 0.75)
 			root.add_child(c); v.parts.append([c, 0.0, 4.2])
 		"bus":
 			var b: Node3D = Models.bus()
+			Models.bake(b, "bus")
 			Models.solid(b, Vector3(2.55, 3.0, 12.0), 1.6)
 			root.add_child(b); v.parts.append([b, 0.0, 12.0])
 		"canta":
-			var c: Node3D = Models.canta(Color(CANTA_COLORS[_rng.randi() % CANTA_COLORS.size()]))
+			var col: String = CANTA_COLORS[_rng.randi() % CANTA_COLORS.size()]
+			var c: Node3D = Models.canta(Color(col))
+			Models.bake(c, "canta_" + col)
 			Models.solid(c, Vector3(1.08, 1.4, 2.3), 0.8)
 			root.add_child(c); v.parts.append([c, 0.0, 2.3])
 		"bike":
 			var rig: Node3D = BikeRig.new()
 			rig.build("oma" if _rng.randf() < 0.55 else "opa", Color(BIKE_COLORS[_rng.randi() % BIKE_COLORS.size()]), "_low")
 			rig.add_rider(_rng)
+			for g in rig.find_children("*", "GeometryInstance3D", true, false):
+				(g as GeometryInstance3D).visibility_range_end = 160.0      # small: not drawn far off
 			root.add_child(rig); v.parts.append([rig, 0.0, 1.8])
 		"tram":
 			v.line = TRAM_LINES[_rng.randi() % TRAM_LINES.size()]
@@ -328,6 +341,7 @@ func _build_model(v: Dictionary) -> void:
 			for k in TRAM_SECTIONS.size():
 				var cab := -1 if k == 0 else (1 if k == TRAM_SECTIONS.size() - 1 else 0)
 				var sec: Node3D = Models.tram_section(TRAM_SECTIONS[k], cab, TRAM_DOORS[k], v.line)
+				Models.bake(sec, "tram_%d" % k)
 				Models.solid(sec, Vector3(2.4, 3.0, TRAM_SECTIONS[k]), 1.7)
 				root.add_child(sec)
 				v.parts.append([sec, off, TRAM_SECTIONS[k]])
@@ -540,9 +554,48 @@ func _process(delta: float) -> void:
 	for kind in counts:
 		if counts[kind] < target[kind]:
 			_spawn(kind)                  # one per kind per frame: no bursts
+	_ped_box = Rect2()
+	if pedestrians.size():
+		_ped_box = Rect2(pedestrians[0][0], Vector2.ZERO)
+		for q in pedestrians:
+			_ped_box = _ped_box.expand(q[0])
+		_ped_box = _ped_box.grow(PED_SEES + 5.0)
+	# Who is where, so each vehicle looks only at those near it.
+	_grid.clear()
+	for v in vehicles:
+		var c := Vector2i(floori(v.pos.x / GRID), floori(v.pos.y / GRID))
+		if _grid.has(c): _grid[c].append(v)
+		else: _grid[c] = [v]
+	# Those far from you move in bigger steps, a few frames apart (each on its
+	# own frame, so the work is spread).
+	_frame += 1
+	var f2 := Vector2(focus.x, focus.z)
 	for v in vehicles.duplicate():
-		if not v.get("driver", false) and not v.get("parked", false):
-			_drive(v, delta)
+		if v.get("driver", false) or v.get("parked", false):
+			continue
+		if not v.has("slot"):
+			v.slot = _rng.randi() % FAR_EVERY
+		var acc: float = v.get("dt", 0.0) + delta
+		if v.pos.distance_to(f2) > FULL_NEAR and not v.has("chase") and not v.get("driven", false) \
+				and (_frame + int(v.get("slot", 0))) % FAR_EVERY != 0 and acc < 0.25:
+			v.dt = acc
+			continue
+		v.dt = 0.0
+		_drive(v, acc)
+
+
+# The vehicles in the grid cells along the way `fwd` from p, up to `reach` ahead.
+func _near(p: Vector2, fwd: Vector2, reach: float) -> Array:
+	var q := p + fwd * reach
+	var c0 := Vector2i(floori((minf(p.x, q.x) - 10.0) / GRID), floori((minf(p.y, q.y) - 10.0) / GRID))
+	var c1 := Vector2i(floori((maxf(p.x, q.x) + 10.0) / GRID), floori((maxf(p.y, q.y) + 10.0) / GRID))
+	var out := []
+	for cx in range(c0.x, c1.x + 1):
+		for cy in range(c0.y, c1.y + 1):
+			var cell = _grid.get(Vector2i(cx, cy))
+			if cell != null:
+				out.append_array(cell)
+	return out
 
 
 func _drive(v: Dictionary, dt: float) -> void:
@@ -553,8 +606,9 @@ func _drive(v: Dictionary, dt: float) -> void:
 	var f := _front(v)
 	var fwd: Vector2 = f[1]
 	# Slow for the bend ahead.
-	var ahead := v.duplicate(); ahead.s = minf(v.s + 14.0, e.len)
-	var bend: float = acos(clampf(fwd.dot(_front(ahead)[1]), -1.0, 1.0))
+	var s_ahead: float = minf(v.s + 14.0, e.len)
+	var fwd_ahead: Vector2 = _at(e, s_ahead if v.dir == 1 else e.len - s_ahead)[1] * v.dir
+	var bend: float = acos(clampf(fwd.dot(fwd_ahead), -1.0, 1.0))
 	var want: float = spec.max * clampf(1.0 - bend / 1.1, 0.3, 1.0)
 	if v.has("chase"):
 		want = spec.max * 1.5 * clampf(1.0 - bend / 1.6, 0.45, 1.0)   # on a call: fast, and through the others
@@ -563,7 +617,7 @@ func _drive(v: Dictionary, dt: float) -> void:
 	# (A tram never goes through another tram, ghosting or not.)
 	var gap := 1e9
 	var olen_tram: float = KINDS.tram.len
-	for o in vehicles:
+	for o in _near(v.pos, fwd, 70.0):
 		if o == v: continue
 		if v.ghost > 0.0 and not (v.kind == "tram" and o.kind == "tram"): continue
 		if (o.kind == "bike") != (v.kind == "bike"): continue   # bikes keep to their own edge of the street
@@ -593,7 +647,7 @@ func _drive(v: Dictionary, dt: float) -> void:
 	# And for pedestrians: anyone in its way ahead, or walking into it before
 	# it gets there (looking a second and a half ahead), it stops short of.
 	var room: float = PED_ROOM[v.kind]
-	for q in pedestrians:
+	for q in (pedestrians if _ped_box.has_point(v.pos) else []):
 		var rel: Vector2 = q[0] - v.pos
 		var along := rel.dot(fwd)
 		if along <= 0.0 or along > PED_SEES:

@@ -17,6 +17,7 @@ const TileBuilder := preload("res://scripts/tile_builder.gd")
 const SWIM_Y := -2.65          # your feet while swimming: the canal is 1.4 m below the street
 const WATER_Y := -1.4          # the canal surface (TileBuilder.WATER_Y)
 const ENTER_RANGE := 3.0
+const WALK_FAR := 950.0        # metres you see on foot (the fog closes in before it: Main.WALK_FOG)
 const BOARD_RANGE := 4.0       # a boat lies below the quay: a little more reach
 # Per vehicle: camera height above the road, camera distance, half width.
 const VEHICLE_CAM := {"car": [1.7, 7.5, 0.9], "bus": [3.2, 15.0, 1.3], "tram": [3.4, 19.0, 1.2], "bike": [1.5, 4.8, 0.4], "canta": [1.9, 6.0, 0.6], "boat": [2.0, 8.5, 1.0]}
@@ -91,6 +92,7 @@ func enter(at: Vector3, yaw: float) -> void:
 	visible = true
 	active = true
 	cam.near = 0.15
+	cam.far = WALK_FAR
 	cam.fov = 68.0
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	for i in 24:
@@ -110,6 +112,7 @@ func leave() -> void:
 	visible = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	cam.near = 1.0
+	cam.far = 80000.0
 	cam.fov = 45.0
 	for p in peds:
 		if p.has("rag"):

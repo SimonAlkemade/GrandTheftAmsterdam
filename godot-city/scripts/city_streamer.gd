@@ -16,6 +16,8 @@ const STREET_MATS := ["road", "bike", "walk", "tram", "rail", "rails", "bridge"]
 const MINI_CELL := 64.0
 const BIKE_CELL := 100.0     # parked bikes are drawn per block of this size...
 const BIKE_SEEN := 140.0     # ...and only this close to the camera
+const FURNITURE_SEEN := 220.0   # lamps, benches, bins, signals, bollards: drawn this close (per BIKE_CELL block)
+const TREES_SEEN := 1100.0      # trees: per chunk, this close to its middle
 const JS_FETCH := """
 window.amsFetch = function (path, id, binary) {
   fetch(path).then(function (r) {
@@ -31,6 +33,31 @@ window.amsFetch = function (path, id, binary) {
     window.amsDone(id, 0, "");
   });
 };
+// A tile file, parsed by the browser (far faster than in the game) and kept
+// here as one JSON string per chunk; the game is told only the chunk keys and
+// takes each chunk's string when it builds it.
+window.amsChunks = {};
+window.amsFetchChunks = function (path, id) {
+  fetch(path).then(function (r) {
+    if (!r.ok) throw new Error(path + " returned " + r.status);
+    return r.json();
+  }).then(function (d) {
+    var parts = {};
+    if (d.chunks) { for (var k in d.chunks) parts[k] = JSON.stringify(d.chunks[k]); }
+    else parts[""] = JSON.stringify(d);
+    window.amsChunks[path] = parts;
+    window.amsDone(id, 200, JSON.stringify(Object.keys(parts)));
+  }).catch(function (e) {
+    console.error("Amsterdam: could not load " + path, e);
+    window.amsDone(id, 0, "");
+  });
+};
+window.amsTake = function (path, key) {
+  var parts = window.amsChunks[path];
+  var k = parts && (key in parts) ? key : "";
+  return parts && (k in parts) ? parts[k] : "";
+};
+window.amsDrop = function (path) { delete window.amsChunks[path]; };
 """
 # Minimap layers, drawn in this order, and the surfaces each is made of.
 const MINI := {
@@ -63,6 +90,11 @@ var _js_done                 # JavaScriptObject callback, kept alive here
 var _js_pending := {}
 var _js_next := 0
 var failed := 0              # tiles that could not be loaded
+## In the browser (no threads) a chunk is built and put in the scene a slice
+## of SLICE_USEC per frame, one chunk at a time, so walking on stays smooth.
+const SLICE_USEC := 4000
+var _busy := false
+var _slice_t0 := 0
 
 
 func setup(materials) -> void:
@@ -171,6 +203,8 @@ func _process(delta: float) -> void:
 	if _tick <= 0.0:
 		_tick = 0.4
 		_update_tiles()
+	if _busy:
+		return                          # (browser) a chunk is still being made, a slice a frame
 	var r = null
 	_mutex.lock()
 	if _done.size():
@@ -183,7 +217,9 @@ func _process(delta: float) -> void:
 		_done.remove_at(best)
 	_mutex.unlock()
 	if r != null:
-		_integrate(r)
+		_busy = _web
+		await _integrate(r)
+		_busy = false
 	elif _fetched.size():
 		# Browser: build the nearest wanted chunk whose file has arrived.
 		for n in _fetched.size():
@@ -193,7 +229,9 @@ func _process(delta: float) -> void:
 				_fetch_file(fk)
 			elif _files[fk] != null:
 				_fetched.remove_at(n)
-				_build(key, _chunk_data(fk, key))
+				_busy = true
+				await _build(key, _chunk_data(fk, key))
+				_busy = false
 				break
 
 
@@ -244,6 +282,8 @@ func _update_tiles() -> void:
 	_file_mutex.lock()
 	for fk in _files.keys():
 		if not needed.has(fk) and _files[fk] != null:
+			if _web:
+				JavaScriptBridge.eval("window.amsDrop(%s)" % JSON.stringify(_file_path(fk)), true)
 			_files.erase(fk)
 	_file_mutex.unlock()
 
@@ -261,6 +301,12 @@ func _chunk_data(fk: String, key: String):
 	var d = _files.get(fk)
 	if typeof(d) != TYPE_DICTIONARY:
 		return null
+	if d.has("web_chunks"):            # held by the page as strings: parse just this one
+		if not (d.web_chunks.has(key) or d.web_chunks.has("")):
+			return null
+		var text = JavaScriptBridge.eval("window.amsTake(%s, %s)" % [JSON.stringify(_file_path(fk)), JSON.stringify(key)], true)
+		var c = JSON.parse_string(str(text)) if text else null
+		return c if typeof(c) == TYPE_DICTIONARY else null
 	if d.has("chunks"):
 		return d.chunks.get(key)
 	return d
@@ -271,9 +317,19 @@ func _fetch_file(fk: String) -> void:
 	if _files.has(fk):
 		return
 	_files[fk] = null
-	_http_get("data/tiles/%s.json" % fk, false, func(code: int, text: String):
-		var d = JSON.parse_string(text) if code == 200 and text != "" else null
-		_files[fk] = d if typeof(d) == TYPE_DICTIONARY else {})
+	var id := _js_next
+	_js_next += 1
+	_js_pending[id] = func(code: int, text: String):
+		var keys = JSON.parse_string(text) if code == 200 and text != "" else null
+		var have := {}
+		if typeof(keys) == TYPE_ARRAY:
+			for k in keys: have[str(k)] = true
+		_files[fk] = {"web_chunks": have}
+	JavaScriptBridge.eval("window.amsFetchChunks(%s, %d)" % [JSON.stringify(_file_path(fk)), id], true)
+
+
+func _file_path(fk: String) -> String:
+	return "data/tiles/%s.json" % fk
 
 
 # Fetch a file published next to the page; `done(code, text)` gets the text,
@@ -304,15 +360,18 @@ func _task(key: String) -> void:
 		_files[fk] = d if typeof(d) == TYPE_DICTIONARY else {}
 	var data = _chunk_data(fk, key)
 	_file_mutex.unlock()
-	_build(key, data)
+	await _build(key, data)     # (on a worker thread it never pauses)
 
 
 func _build(key: String, data) -> void:
 	var r := {}
 	if typeof(data) == TYPE_DICTIONARY:
-		r = TileBuilder.new().build_tile(data)
+		var tb := TileBuilder.new()
+		tb.budget_usec = SLICE_USEC if _web else 0
+		r = await tb.build_tile(data)
 		r.instances = _instance_buffers(r.points, r.street_bikes, r.bridge_cells)
-		r.mini = _minimap_cells(r.surfaces)
+		await _pause()
+		r.mini = await _minimap_cells(r.surfaces)
 	else:
 		r = {"key": key, "failed": true, "rect": Rect2()}
 		push_error("Could not load tile %s" % key)
@@ -333,6 +392,8 @@ func _minimap_cells(surfaces: Dictionary) -> Dictionary:
 				continue
 			var v: PackedVector3Array = surfaces[mname][0]
 			for t in range(0, v.size() - 2, 3):
+				if t % 600 == 0:
+					await _pause()
 				var a := Vector2(v[t].x, v[t].z); var b := Vector2(v[t + 1].x, v[t + 1].z); var c := Vector2(v[t + 2].x, v[t + 2].z)
 				if absf((b - a).cross(c - a)) < 0.05:
 					continue                    # edge-on from above (gable ends): no area
@@ -414,7 +475,15 @@ func _instance_buffers(points: Dictionary, street_bikes: Array, bridge_cells: Di
 	return out
 
 
+# (Browser) on to the next frame once this frame's slice is used up.
+func _pause() -> void:
+	if _web and Time.get_ticks_usec() - _slice_t0 > SLICE_USEC:
+		await get_tree().process_frame
+		_slice_t0 = Time.get_ticks_usec()
+
+
 func _integrate(r: Dictionary) -> void:
+	_slice_t0 = Time.get_ticks_usec()
 	if not tiles.has(r.key):
 		return
 	if r.get("failed", false):
@@ -445,6 +514,7 @@ func _integrate(r: Dictionary) -> void:
 		var m: ArrayMesh = meshes[g]
 		m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 		m.surface_set_material(m.get_surface_count() - 1, mats.get_mat(name))
+		await _pause()
 	for g in meshes:
 		if meshes[g].get_surface_count() == 0:
 			continue
@@ -464,6 +534,7 @@ func _integrate(r: Dictionary) -> void:
 		var fcs := CollisionShape3D.new(); fcs.shape = fshape
 		floor.add_child(fcs)
 		root.add_child(floor)
+		await _pause()
 	# Walls to walk into.
 	if r.walls.size():
 		var body := StaticBody3D.new()
@@ -473,6 +544,7 @@ func _integrate(r: Dictionary) -> void:
 		var cs := CollisionShape3D.new(); cs.shape = shape
 		body.add_child(cs)
 		root.add_child(body)
+		await _pause()
 	# Trees and street furniture, instanced.
 	r.bike_mm = []
 	for kind in r.instances:
@@ -482,20 +554,34 @@ func _integrate(r: Dictionary) -> void:
 		if kind == "bikes":
 			_parked_bikes(r, groups["furniture"])
 			continue
-		for part in _kit[kind]:
-			var mm := MultiMesh.new()
-			mm.transform_format = MultiMesh.TRANSFORM_3D
-			mm.use_colors = true
-			mm.mesh = part[0]
-			mm.instance_count = n
-			var buf: PackedFloat32Array = r.instances[kind][1].duplicate()
-			for i in n:
-				buf[i * 16 + 7] = part[2]          # lift each part to its height
-			mm.buffer = buf
-			var mmi := MultiMeshInstance3D.new()
-			mmi.multimesh = mm
-			mmi.material_override = part[1]
-			groups["trees" if kind == "trees" else "furniture"].add_child(mmi)
+		# Trees by the chunk; the small things in blocks, each drawn only near
+		# the camera and casting no shadow.
+		var blocks := {Vector2i.ZERO: r.instances[kind][1]}
+		if kind != "trees":
+			blocks = _blocks(r.instances[kind][1], n)
+		for k in blocks:
+			var cb: PackedFloat32Array = blocks[k]
+			for part in _kit[kind]:
+				var mm := MultiMesh.new()
+				mm.transform_format = MultiMesh.TRANSFORM_3D
+				mm.use_colors = true
+				mm.mesh = part[0]
+				mm.instance_count = cb.size() / 16
+				var buf: PackedFloat32Array = cb.duplicate()
+				for i in mm.instance_count:
+					buf[i * 16 + 7] = part[2]          # lift each part to its height
+				mm.buffer = buf
+				var mmi := MultiMeshInstance3D.new()
+				mmi.multimesh = mm
+				mmi.material_override = part[1]
+				if kind == "trees":
+					mmi.visibility_range_end = TREES_SEEN
+				else:
+					mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+					mmi.visibility_range_end = FURNITURE_SEEN
+					mmi.visibility_range_end_margin = 20.0
+				groups["trees" if kind == "trees" else "furniture"].add_child(mmi)
+		await _pause()
 	# Canal names, lying on the water.
 	for l in r.labels:
 		var lab := Label3D.new()
@@ -511,6 +597,9 @@ func _integrate(r: Dictionary) -> void:
 		lab.rotation = Vector3(-PI / 2, ang, 0)
 		lab.rotation_order = EULER_ORDER_YXZ
 		root.add_child(lab)
+	if not tiles.has(r.key) or tiles[r.key].get("state") == "ready":   # dropped (or made again) meanwhile
+		root.queue_free()
+		return
 	add_child(root)
 	tiles[r.key] = {"state": "ready", "node": root, "result": r, "groups": groups}
 	tile_added.emit(r.key, r)
@@ -589,6 +678,18 @@ func _parked_bikes(r: Dictionary, parent: Node3D) -> void:
 		mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 		parent.add_child(mmi)
 		r.bike_mm.append(mm)
+
+
+# An instance buffer (16 floats each, the position at 3, 7, 11) cut into
+# BIKE_CELL blocks.
+func _blocks(buf: PackedFloat32Array, n: int) -> Dictionary:
+	var cells := {}
+	for i in n:
+		var k := Vector2i(floori(buf[i * 16 + 3] / BIKE_CELL), floori(buf[i * 16 + 11] / BIKE_CELL))
+		if not cells.has(k):
+			cells[k] = PackedFloat32Array()
+		cells[k].append_array(buf.slice(i * 16, i * 16 + 16))
+	return cells
 
 
 ## The parked bike nearest p within `within` metres: {tile, mm, i, at, yaw, color}, or {}.

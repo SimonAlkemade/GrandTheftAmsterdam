@@ -2,7 +2,8 @@
 
 The whole of Amsterdam (285,000 buildings, from Overture Maps / OpenStreetMap
 open data) streams in 375 m chunks around you: the ones nearest you are built
-first, one at a time, and the ones far behind you are dropped again. Cars, GVB buses and
+first, one at a time (in the browser a slice a frame, so it never freezes),
+and the ones far behind you are dropped again. Cars, GVB buses and
 three-section trams drive the real street and tram-track network, and you
 run around it on foot, GTA-style: you start on the Dam with a minimap in
 the corner, among pedestrians, with the traffic stopping for you.
@@ -257,6 +258,50 @@ keep right and keep their distance, including from you. Everything slows
 for bends. Buses use only wide roads; trams use only tram tracks. Buses and
 trams stop now and then, as if at a stop. Each 30 m tram is three sections
 plus bellows, articulated along the path its front has driven.
+
+## Frame rate
+
+What a frame costs, standing on the Dam (measured natively on the
+browser's renderer, Compatibility; before → after the frame-rate pass):
+
+| | before | after |
+|---|---|---|
+| draw calls | 10,991 | about 2,600 |
+| triangles | 5.9 million | about 1.0 million |
+| traffic script | 33 ms | about 6 ms |
+| a chunk loading in the browser | one 100-170 ms freeze per chunk, plus about 115 ms parsing its 1.5 km file | 4 ms slices over about 25 frames |
+
+How:
+
+- **On foot you see 950 m**, the fog closing in from 300 m (the map camera
+  still sees the whole city), and the chunks loaded round you reach 850 m
+  instead of 1,100 m. The sun's shadows reach 160 m in two cascades (they
+  were 600 m in four, and the shadow pass drew more than the picture).
+- **Fewer, bigger meshes.** A vehicle's parts are merged into one mesh per
+  material (`VehicleModels.bake`; a tram was 115 meshes, now about a dozen
+  surfaces), its wheels left free to turn. Lamps, benches, bins, signals and
+  bollards are instanced per 100 m block and drawn within 220 m, with no
+  shadows; cyclists within 160 m. People's heads and hands are low-poly
+  spheres (Godot's default sphere is 4,000 triangles), and hands, feet, hair
+  and necks cast no shadow of their own.
+- **Traffic** sorts its vehicles into a 50 m grid each frame, so each one
+  checks only its neighbours for the gap ahead (it used to check every other
+  vehicle), and vehicles over 180 m away move every third frame.
+- **Streaming without freezes in the browser**, which has no threads: the
+  browser parses a tile file and keeps each chunk as its own string; the game
+  then builds and adds one chunk at a time a 4 ms slice per frame
+  (`TileBuilder.budget_usec`), so a chunk arrives over about 25 frames instead
+  of freezing one. On the desktop chunks are still built on worker threads.
+- On a high-density (Retina) screen the browser draws the 3D world at about
+  normal density, scaled up; the HUD stays sharp.
+
+The data's 375 m chunks stay as they are: smaller ones would multiply the
+draw calls (a chunk's buildings are one mesh with a surface per material),
+and slicing already takes the freeze out of loading one.
+`tests/streaming_test.gd` checks that a chunk built in slices is the same
+chunk and never holds a frame up for long:
+
+    godot --headless --path godot-city --script tests/streaming_test.gd
 
 ## Regenerating the data
 

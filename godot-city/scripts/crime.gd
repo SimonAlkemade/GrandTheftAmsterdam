@@ -407,7 +407,7 @@ func _arrive(v: Dictionary) -> void:
 			Color("1a1a1a"), Color("111111"), Color("1d2f57"))
 		add_child(h)
 		var cap := MeshInstance3D.new()
-		var cm := CylinderMesh.new(); cm.top_radius = 0.13; cm.bottom_radius = 0.125; cm.height = 0.08
+		var cm := CylinderMesh.new(); cm.top_radius = 0.13; cm.bottom_radius = 0.125; cm.height = 0.08; cm.radial_segments = 10; cm.rings = 1
 		cap.mesh = cm; cap.material_override = Human._m(Color("1d2f57"))
 		cap.position.y = 0.12
 		h.head.add_child(cap)

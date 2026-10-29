@@ -63,6 +63,7 @@ func _ready() -> void:
 	hour = float(args.get("hour", hour))
 
 	_world()
+	_screen_scale()
 	mats = Materials.new()
 	mats.build()
 	streamer = Streamer.new()
@@ -135,7 +136,7 @@ func _world() -> void:
 	env.fog_depth_begin = 1400.0
 	env.fog_depth_end = 3600.0
 	env.fog_sky_affect = 0.0
-	env.ssao_enabled = true
+	env.ssao_enabled = RenderingServer.get_current_rendering_method() == "forward_plus"   # (the browser's renderer has none)
 	env.ssao_radius = 1.5
 	env.glow_enabled = true
 	env.glow_hdr_threshold = 1.2
@@ -145,9 +146,34 @@ func _world() -> void:
 	add_child(we)
 	sun = DirectionalLight3D.new()
 	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 600.0
-	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 	add_child(sun)
+	_view("map")
+
+
+# On foot you see 950 m, the fog closing in from 300 m, and shadows within
+# 160 m (two cascades); from the map camera, far more of the city.
+const WALK_RADIUS := 850.0       # chunks loaded round you on foot
+const WALK_FOG := [300.0, 900.0]
+const MAP_FOG := [1400.0, 3600.0]
+
+func _view(m: String) -> void:
+	var walk := m == "walk"
+	env.fog_depth_begin = WALK_FOG[0] if walk else MAP_FOG[0]
+	env.fog_depth_end = WALK_FOG[1] if walk else MAP_FOG[1]
+	sun.directional_shadow_max_distance = 160.0 if walk else 600.0
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS if walk else DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+
+
+# On a high-density (Retina) screen the browser has two or three times the
+# pixels: draw the 3D world at about normal density and scale it up (the
+# HUD and text stay sharp).
+func _screen_scale() -> void:
+	if not OS.has_feature("web"):
+		return
+	var sc := DisplayServer.screen_get_scale()
+	if sc > 1.25:
+		get_viewport().scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+		get_viewport().scaling_3d_scale = clampf(1.25 / sc, 0.5, 1.0)
 
 
 func _set_hour(h: float) -> void:
@@ -429,6 +455,7 @@ func _set_mode(m: String) -> void:
 		ui["mode_" + m].button_pressed = true
 		return
 	mode = m
+	_view(m)
 	ui.mode_map.button_pressed = m == "map"
 	ui.mode_walk.button_pressed = m == "walk"
 	if m == "walk":
@@ -516,7 +543,7 @@ func _process(delta: float) -> void:
 		focus = walker.global_position
 		if _damrak_boat.is_empty() and not streamer.tile_at(Vector3(DAMRAK_BOAT.x, 0, DAMRAK_BOAT.y)).is_empty():
 			_damrak_boat = boats.moor(DAMRAK_BOAT, Vector2(_walk_at.x, _walk_at.z))
-		streamer.radius = 1100.0
+		streamer.radius = WALK_RADIUS
 		traffic.player = walker.global_position if walker.vehicle == null else Vector3(1e9, 0, 1e9)
 		ui.prompt.text = walker.prompt
 		var doing := "foot"

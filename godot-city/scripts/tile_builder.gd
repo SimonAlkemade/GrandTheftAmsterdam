@@ -36,6 +36,11 @@ const BRIDGE_WIDTH := 7.0
 const BRIDGE_CELL := 12.0      # the grid bridge_y looks segments up in
 
 var surf := {}          # material name -> [PackedVector3Array, PackedVector3Array, PackedVector2Array]
+## In the browser there are no threads: give a slice of this many
+## microseconds to the build per frame (await build_tile), so the game runs on
+## while a chunk is made. 0: all at once (on a worker thread).
+var budget_usec := 0
+var _t0 := 0
 var walls := PackedVector3Array()
 
 
@@ -204,6 +209,7 @@ func _street_bikes(bl: Array, water: Array, seed: int, neighbours: Array = []) -
 				var k := Vector2i(cx, cy)
 				if not grid.has(k): grid[k] = []
 				grid[k].append(i)
+		await pause()
 	var in_building := func(p: Vector2, skip: int) -> bool:
 		for j in grid.get(Vector2i(floori(p.x / CELL), floori(p.y / CELL)), []):
 			if j != skip and Geometry2D.is_point_in_polygon(p, rings[j]):
@@ -246,6 +252,7 @@ func _street_bikes(bl: Array, water: Array, seed: int, neighbours: Array = []) -
 							yaw.append(atan2(-d.x, -d.y) + rng.randf_range(-0.06, 0.06))
 				t += rng.randf_range(BIKE_EVERY.x, BIKE_EVERY.y)
 			until = t - length
+		await pause()
 	return [at, yaw]
 
 
@@ -259,8 +266,12 @@ func _ground_faces(sunk: bool) -> PackedVector3Array:
 		if not surf.has(name):
 			continue
 		var lift: float = {"ground": 0.09, "water": QUAY_FOOT - WATER_Y}.get(name, 0.0)   # the bed lies at the quays' foot
-		for v in surf[name][0]:
-			out.append(Vector3(v.x, v.y + lift, v.z))
+		var src: PackedVector3Array = surf[name][0]
+		var at := out.size()
+		out.append_array(src)
+		if lift != 0.0:
+			for k in src.size():
+				out[at + k] = src[k] + Vector3(0, lift, 0)
 	return out
 
 
@@ -458,8 +469,17 @@ static func bridge_y(cells: Dictionary, p: Vector2) -> float:
 	return y
 
 
-## Call on a fresh instance: TileBuilder.new().build_tile(data).
+## Waits for the next frame once this frame's slice is used up (budget_usec).
+func pause() -> void:
+	if budget_usec > 0 and Time.get_ticks_usec() - _t0 > budget_usec:
+		await (Engine.get_main_loop() as SceneTree).process_frame
+		_t0 = Time.get_ticks_usec()
+
+
+## Call on a fresh instance: TileBuilder.new().build_tile(data) (with
+## budget_usec set: await it).
 func build_tile(data: Dictionary) -> Dictionary:
+	_t0 = Time.get_ticks_usec()
 	var ti: int = int(data.tile[0]); var tj: int = int(data.tile[1])
 	var tile_size := float(data.get("size", 1500.0))   # a chunk's size, or a whole tile's
 	var x0 := ti * tile_size; var z1 := -tj * tile_size; var z0 := -(tj + 1) * tile_size
@@ -467,6 +487,7 @@ func build_tile(data: Dictionary) -> Dictionary:
 	var bl: Array = data.get("buildings", [])
 	for i in bl.size():
 		building(bl[i], i, seed)
+		await pause()
 	# Ground, green, squares.
 	var ground := PackedVector2Array([Vector2(x0, z0), Vector2(x0 + tile_size, z0), Vector2(x0 + tile_size, z1), Vector2(x0, z1)])
 	if data.has("ground"):                # the street level, with the canals cut out
@@ -480,10 +501,12 @@ func build_tile(data: Dictionary) -> Dictionary:
 		var rings := []
 		for r in g.r: rings.append(pts(r))
 		polygon(g.c, rings, 0.03, 4.0, g.get("t"))
+		await pause()
 	for g in data.get("plazas", []):
 		var rings := []
 		for r in g.r: rings.append(pts(r))
 		polygon("plaza", rings, 0.02, 3.0, g.get("t"))
+		await pause()
 	# Water, with a stone quay along every edge that is a shore; outlines kept
 	# for swimming. (The data splits a canal into pieces, often under a bridge:
 	# where two pieces meet there is water on both sides and no quay.)
@@ -499,6 +522,7 @@ func build_tile(data: Dictionary) -> Dictionary:
 		for k in rings.size():
 			for run in _quay_wall(rings[k], k == 0, Rect2(x0, z0, tile_size, tile_size), water, i, data.has("ground")):
 				ribbon("quay", run, 0.6, 0.12, 2.0)
+			await pause()
 	# Streets, tram and rail; polylines kept for traffic and street names.
 	var lanes := []
 	var names := []
@@ -513,6 +537,7 @@ func build_tile(data: Dictionary) -> Dictionary:
 			lanes.append({"kind": layer, "w": w, "p": p})
 		if str(rd[3]) != "":
 			names.append([p[p.size() / 2], str(rd[3])])
+		await pause()
 	var bridges := []
 	var bridge_cells := {}
 	for coords in data.get("bridges", []):
@@ -521,22 +546,27 @@ func build_tile(data: Dictionary) -> Dictionary:
 			continue
 		bridges.append(b[0])
 		_index_bridge(b[0], b[1], bridge_cells)
+		await pause()
 	var labels := []
 	for l in data.get("waterLabels", []):
 		labels.append([str(l[0]), Vector2(float(l[1]) / 10.0, -float(l[2]) / 10.0), float(l[3])])
 		names.append([Vector2(float(l[1]) / 10.0, -float(l[2]) / 10.0), str(l[0])])
-	var street_bikes := _street_bikes(bl, water, seed, data.get("nb", []))
+	await pause()
+	var street_bikes: Array = await _street_bikes(bl, water, seed, data.get("nb", []))
+	await pause()
 	var points := {}
 	for k in ["trees", "lamps", "benches", "bikes", "bins", "signals", "bollards"]:
 		points[k] = pts(data.get(k, []))
 	var places := []
 	for p in data.get("places", []):
 		places.append([str(p[0]), str(p[1]), Vector2(float(p[2]) / 10.0, -float(p[3]) / 10.0), int(p[4])])
+	await pause()
+	var ground_faces := _ground_faces(data.has("ground"))
 	return {
 		"key": "%d_%d" % [ti, tj], "rect": Rect2(x0, z0, tile_size, tile_size),
 		"surfaces": surf, "walls": walls, "lanes": lanes, "water": water, "bridges": bridges, "bridge_cells": bridge_cells,
 		"labels": labels, "points": points, "places": places, "names": names, "buildings": bl.size(),
 		"street_bikes": street_bikes,
 		"water_y": (WATER_Y if data.has("ground") else 0.05),
-		"ground_faces": _ground_faces(data.has("ground")),
+		"ground_faces": ground_faces,
 	}
