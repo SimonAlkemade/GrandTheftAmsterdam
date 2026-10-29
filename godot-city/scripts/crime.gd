@@ -219,6 +219,7 @@ func fire() -> void:
 		if not c.down:
 			c.last = last_seen
 	_scare(walker.global_position)
+	traffic.scare(walker.global_position)              # and the traffic round you drives off
 
 
 func reload() -> void:

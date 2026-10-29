@@ -4,7 +4,13 @@ extends Node3D
 ## light you can see from afar); the way there is routed over the real street
 ## and bike-path network and drawn on the minimap and, in the map view, over
 ## the streets. Deliveries are timed by the length of the route and pay more
-## the quicker you are.
+## the quicker you are. After PARCELS of them:
+##
+## Mission 3, tulips for the tourists: fetch a stock of tulips at the
+## Bloemenmarkt (the flower market on the Singel) and sell them, a bunch at a
+## time, to the tourists among the people in the street (a tulip turns over
+## their heads, a pink dot on the minimap). Walk up to one and they wait for
+## you; stand by them a moment and they buy. Sold out, fetch more.
 
 signal announce(title: String, sub: String)   # a big message in the middle of the screen
 
@@ -14,11 +20,20 @@ const DROP_DIST := Vector2(380.0, 800.0)
 const PAY := 25
 const ROUTE_KINDS := ["road", "bike"]
 const YELLOW := Color(1.0, 0.82, 0.08)
+const PARCELS := 5                   # deliveries that finish the courier job
+const BLOEMENMARKT := Vector2(-314.8, 821.3)   # the flower market on the Singel (Overture's place, scene metres)
+const BUNCHES := 10                  # tulips in a stock from the market
+const PRICE := Vector2i(6, 12)       # what a tourist pays for a bunch, €
+const TOURISTS := 3                  # tourists about at once
+const TOURIST_FROM := Vector2(15.0, 70.0)   # how far from you a new one is picked
+const SELL_NEAR := 1.8               # metres: close enough to sell
+const SELL_TIME := 0.6               # seconds standing by them
+const PINK := Color(1.0, 0.35, 0.62)
 
 var streamer
 var traffic
 var walker
-var state := "off"                   # off, pickup, deliver
+var state := "off"                   # off; pickup, deliver (Mission 1); tulips_fetch, tulips_sell (Mission 3)
 var target := Vector3.ZERO
 var target_name := ""
 var route := PackedVector2Array()    # from you to the target, along the streets
@@ -33,6 +48,13 @@ var _route_t := 0.0
 var _wait := 0.0                     # a pause before the next pickup appears
 var _rng := RandomNumberGenerator.new()
 var _mats := {}
+var stall_at := BLOEMENMARKT         # where the tulips are fetched
+var tulips := 0                      # bunches in your arms
+var sold := 0
+var tourists: Array = []             # pedestrians (Walker.peds entries) who want tulips
+var _tourist_t := 0.0
+var _sale_t := 0.0
+var _tulip_mesh: Array = []          # [stem, flower] meshes, for the icons
 
 
 func setup(s, t, w) -> void:
@@ -53,8 +75,21 @@ func start() -> void:
 	target = Vector3.INF
 
 
+## Mission 3 straight away (and the courier job taken as done).
+func start_tulips() -> void:
+	_clear()
+	_set_carrying(false)
+	state = "tulips_fetch"
+	_wait = 3.0
+	announce.emit("MISSION 3: TULIPS", "Fetch a stock of tulips at the Bloemenmarkt and sell them to tourists")
+
+
 ## What to do now, for the top of the screen.
 func objective() -> String:
+	if state == "tulips_fetch" and target != Vector3.INF:
+		return "Fetch tulips at the Bloemenmarkt"
+	if state == "tulips_sell":
+		return "Sell tulips to the tourists · %d bunch%s left" % [tulips, "" if tulips == 1 else "es"]
 	if state == "pickup" and target != Vector3.INF:
 		return "Pick up the parcel at %s" % target_name
 	if state == "deliver":
@@ -63,6 +98,8 @@ func objective() -> String:
 
 
 func distance_left() -> float:
+	if state == "tulips_sell":
+		return _here().distance_to(Vector2(target.x, target.z))
 	return route_len if route.size() > 1 else _here().distance_to(Vector2(target.x, target.z))
 
 
@@ -78,10 +115,15 @@ func _here() -> Vector2:
 func _process(delta: float) -> void:
 	if state == "off" or traffic == null:
 		return
+	if state == "tulips_sell":
+		_selling(delta)
+		return
 	if _wait > 0.0:
 		_wait -= delta
 		if _wait <= 0.0 and state == "pickup":
 			_place(_choose(_here(), PICKUP_DIST), "pickup")
+		elif _wait <= 0.0 and state == "tulips_fetch":
+			_place(_street_near(stall_at), "tulips")
 		return
 	if target == Vector3.INF:
 		_wait = 1.0                       # nowhere suitable yet (the streets may still be loading)
@@ -107,6 +149,14 @@ func _process(delta: float) -> void:
 
 
 func _arrive() -> void:
+	if state == "tulips_fetch":
+		tulips = BUNCHES
+		_clear()
+		state = "tulips_sell"
+		_tourist_t = 0.5
+		walker.tulips = tulips
+		announce.emit("%d BUNCHES OF TULIPS" % BUNCHES, "Sell them to the tourists: walk up to one")
+		return
 	if state == "pickup":
 		_set_carrying(true)
 		var from := Vector2(target.x, target.z)
@@ -122,8 +172,12 @@ func _arrive() -> void:
 		money += PAY + bonus
 		delivered += 1
 		_set_carrying(false)
-		announce.emit("PARCEL DELIVERED", "+ €%d%s" % [PAY + bonus, ("  (€%d for speed)" % bonus) if bonus > 0 else ""])
 		_clear()
+		if delivered >= PARCELS:
+			announce.emit("COURIER JOB DONE", "%d parcels, €%d. Next: tulips for the tourists" % [delivered, money])
+			state = "tulips_fetch"; _wait = 4.0
+			return
+		announce.emit("PARCEL DELIVERED", "+ €%d%s" % [PAY + bonus, ("  (€%d for speed)" % bonus) if bonus > 0 else ""])
 		state = "pickup"; _wait = 2.5
 
 
@@ -139,6 +193,135 @@ func _clear() -> void:
 	route = PackedVector2Array()
 	route_len = 0.0
 	_ribbon.mesh = null
+
+
+# ---- tulips --------------------------------------------------------------------
+
+func _selling(delta: float) -> void:
+	var here := _here()
+	# Tourists come and go: one who has walked off (or been knocked down,
+	# shot, scared) is no longer one.
+	for p in tourists.duplicate():
+		var gone: bool = not walker.peds.has(p) or p.get("dead", false) or p.has("rag") or p.get("flee", 0.0) > 0.0 \
+			or Vector2(p.pos.x, p.pos.z).distance_to(here) > 110.0
+		if gone:
+			_untourist(p)
+	_tourist_t -= delta
+	if tourists.size() < TOURISTS and _tourist_t <= 0.0:
+		_tourist_t = 1.5
+		_new_tourist(here)
+	# The nearest one is where you are headed; they wait for you when you come near.
+	var best = null
+	var bd := INF
+	for p in tourists:
+		var d := Vector2(p.pos.x, p.pos.z).distance_to(here)
+		var icon: Node3D = p.tulip_icon
+		icon.position = p.pos + Vector3(0, 2.35 + sin(Time.get_ticks_msec() / 300.0) * 0.08, 0)
+		icon.rotation.y += delta * 2.0
+		if d < bd:
+			bd = d; best = p
+	if best == null:
+		target = Vector3.INF
+		route = PackedVector2Array(); route_len = 0.0; _ribbon.mesh = null
+		return
+	target = best.pos                         # (close by: the minimap's blip, no route)
+	if bd < 7.0:
+		best.wait = 1.0                       # they stop, and turn to you
+	if bd < SELL_NEAR and walker.vehicle == null:
+		_sale_t += delta
+		if _sale_t >= SELL_TIME:
+			_sell(best)
+	else:
+		_sale_t = 0.0
+
+
+func _sell(p: Dictionary) -> void:
+	_sale_t = 0.0
+	var price := _rng.randi_range(PRICE.x, PRICE.y)
+	money += price
+	tulips -= 1
+	sold += 1
+	walker.tulips = tulips
+	p.bought = true                           # one bunch each
+	_untourist(p)
+	_tourist_t = 2.0
+	if tulips > 0:
+		announce.emit("SOLD", "+ €%d  ·  %d bunch%s left" % [price, tulips, "" if tulips == 1 else "es"])
+		return
+	for t in tourists.duplicate():
+		_untourist(t)
+	target = Vector3.INF
+	route = PackedVector2Array(); route_len = 0.0; _ribbon.mesh = null
+	announce.emit("SOLD OUT", "+ €%d. Fetch more tulips at the Bloemenmarkt" % price)
+	state = "tulips_fetch"; _wait = 3.0
+
+
+# Someone in the street, not too near and not too far, becomes a tourist who
+# wants tulips.
+func _new_tourist(here: Vector2) -> void:
+	var pool := []
+	for p in walker.peds:
+		if tourists.has(p) or p.get("bought", false) or p.get("dead", false) or p.has("rag") or p.get("flee", 0.0) > 0.0:
+			continue
+		var d := Vector2(p.pos.x, p.pos.z).distance_to(here)
+		if d > TOURIST_FROM.x and d < TOURIST_FROM.y:
+			pool.append(p)
+	if pool.is_empty():
+		return
+	var p: Dictionary = pool[_rng.randi() % pool.size()]
+	p.tulip_icon = _tulip_icon(1.0)
+	add_child(p.tulip_icon)
+	tourists.append(p)
+
+
+func _untourist(p: Dictionary) -> void:
+	tourists.erase(p)
+	if p.has("tulip_icon"):
+		p.tulip_icon.queue_free()
+		p.erase("tulip_icon")
+
+
+# A street spot by `at` that the courier's routing reaches from you (the
+# market itself lies on the water, and a scrap of street by it may join
+# nothing); INF while the streets there are not loaded.
+func _street_near(at: Vector2) -> Vector3:
+	var near := []                       # [distance, point]: the nearest point of each street
+	for kind in ROUTE_KINDS:
+		for id in traffic.by_kind[kind]:
+			var e: Dictionary = traffic.edges[id]
+			var pts: PackedVector2Array = e.p
+			var bd := 150.0
+			var bq := Vector2.INF
+			for i in pts.size() - 1:
+				var q := Geometry2D.get_closest_point_to_segment(at, pts[i], pts[i + 1])
+				if q.distance_to(at) < bd:
+					bd = q.distance_to(at); bq = q
+			if bq != Vector2.INF and streamer.water_at(Vector3(bq.x, 0, bq.y)) != 1:
+				near.append([bd, bq])
+	near.sort_custom(func(a, b): return a[0] < b[0])
+	for k in mini(near.size(), 8):
+		var q: Vector2 = near[k][1]
+		if _path(_here(), q).size() >= 2:
+			return Vector3(q.x, 0.0, q.y)
+	return Vector3.INF
+
+
+# A tulip: a green stem and leaf, a red cup on top, `s` times life size x 6.
+func _tulip_icon(s: float) -> Node3D:
+	if _tulip_mesh.is_empty():
+		var stem := CylinderMesh.new(); stem.top_radius = 0.03; stem.bottom_radius = 0.035; stem.height = 0.5; stem.radial_segments = 6; stem.rings = 1
+		var cup := CylinderMesh.new(); cup.top_radius = 0.17; cup.bottom_radius = 0.09; cup.height = 0.26; cup.radial_segments = 6; cup.rings = 1
+		var gm := StandardMaterial3D.new(); gm.albedo_color = Color("3f8f3a"); gm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		var rm := StandardMaterial3D.new(); rm.albedo_color = Color("e8213f"); rm.emission_enabled = true; rm.emission = Color("ff3355"); rm.emission_energy_multiplier = 0.6
+		_tulip_mesh = [stem, gm, cup, rm]
+	var n := Node3D.new()
+	var a := MeshInstance3D.new(); a.mesh = _tulip_mesh[0]; a.material_override = _tulip_mesh[1]; a.position.y = 0.25
+	var b := MeshInstance3D.new(); b.mesh = _tulip_mesh[2]; b.material_override = _tulip_mesh[3]; b.position.y = 0.6
+	for m in [a, b]:
+		m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		n.add_child(m)
+	n.scale = Vector3.ONE * s
+	return n
 
 
 # ---- where ------------------------------------------------------------------------
@@ -344,10 +527,13 @@ func _build_marker(kind: String) -> Node3D:
 	var beam := CylinderMesh.new(); beam.top_radius = 0.45; beam.bottom_radius = 0.45; beam.height = 70.0; beam.radial_segments = 12
 	beam.cap_top = false; beam.cap_bottom = false
 	_part(n, beam, 0.16, 35.0)
-	var icon: MeshInstance3D
+	var icon: Node3D
 	if kind == "pickup":
 		var box := BoxMesh.new(); box.size = Vector3(0.7, 0.5, 0.55)
 		icon = _part(n, box, 0.95, 2.4)
+	elif kind == "tulips":
+		icon = _tulip_icon(2.2)
+		n.add_child(icon)
 	else:
 		var cone := CylinderMesh.new(); cone.top_radius = 0.55; cone.bottom_radius = 0.0; cone.height = 0.9; cone.radial_segments = 4
 		icon = _part(n, cone, 0.95, 2.6)

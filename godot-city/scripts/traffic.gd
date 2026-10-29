@@ -510,6 +510,18 @@ func _next(v: Dictionary) -> bool:
 				bd = d; best = o
 		v.edge = best[0]; v.dir = best[1]
 		return true
+	if v.get("flee", 0.0) > 0.0:
+		# Fleeing a gunshot: the branch whose far end is furthest from it.
+		var best = options[0]
+		var bd := -INF
+		for o in options:
+			var ne: Dictionary = edges[o[0]]
+			var far: Vector2 = _at(ne, ne.len if o[1] == 1 else 0.0)[0]
+			var d: float = far.distance_to(v.flee_from) + float(o[2]) * 3.0    # (and rather straight on)
+			if d > bd:
+				bd = d; best = o
+		v.edge = best[0]; v.dir = best[1]
+		return true
 	if v.get("driven", false):
 		# At the points you choose: A the leftmost branch, D the rightmost, else
 		# the straightest. (A left turn has a negative cross product here.)
@@ -584,6 +596,26 @@ func _process(delta: float) -> void:
 		_drive(v, acc)
 
 
+## A gunshot at `at`: the cars, Cantas, buses and cyclists within `radius`
+## flee, flat out and away from it, for FLEE_TIME seconds, no longer stopping
+## for anyone on foot. (Police cars come; trams keep to their rails.)
+const FLEE_TIME := 12.0
+const FLEE_KINDS := ["car", "canta", "bus", "bike"]
+
+func scare(at: Vector3, radius := 60.0) -> int:
+	var n := 0
+	var p := Vector2(at.x, at.z)
+	for v in vehicles:
+		if not (v.kind in FLEE_KINDS) or v.has("chase") or v.get("driver", false) or v.get("parked", false) or v.get("driven", false):
+			continue
+		if v.pos.distance_to(p) < radius:
+			v.flee = FLEE_TIME
+			v.flee_from = p
+			v.dwell = 0.0                       # a bus at its stop goes too
+			n += 1
+	return n
+
+
 # The vehicles in the grid cells along the way `fwd` from p, up to `reach` ahead.
 func _near(p: Vector2, fwd: Vector2, reach: float) -> Array:
 	var q := p + fwd * reach
@@ -613,6 +645,10 @@ func _drive(v: Dictionary, dt: float) -> void:
 	if v.has("chase"):
 		want = spec.max * 1.5 * clampf(1.0 - bend / 1.6, 0.45, 1.0)   # on a call: fast, and through the others
 		v.ghost = 1.0
+	var fleeing: bool = v.get("flee", 0.0) > 0.0
+	if fleeing:
+		v.flee -= dt
+		want = spec.max * (1.35 if v.kind == "bike" else 1.7) * clampf(1.0 - bend / 1.5, 0.4, 1.0)   # away, flat out
 	# Keep a gap to anything in front: other vehicles and the walker.
 	# (A tram never goes through another tram, ghosting or not.)
 	var gap := 1e9
@@ -642,12 +678,12 @@ func _drive(v: Dictionary, dt: float) -> void:
 		if absf(d.cross(fwd)) > 2.4: continue
 		gap = minf(gap, along - olen - 2.0)
 	var pp: Vector2 = Vector2(player.x, player.z) - v.pos
-	if pp.dot(fwd) > 0.0 and pp.dot(fwd) < 25.0 and absf(pp.cross(fwd)) < 2.6:
+	if not fleeing and pp.dot(fwd) > 0.0 and pp.dot(fwd) < 25.0 and absf(pp.cross(fwd)) < 2.6:
 		gap = minf(gap, pp.dot(fwd) - 3.0)
 	# And for pedestrians: anyone in its way ahead, or walking into it before
 	# it gets there (looking a second and a half ahead), it stops short of.
 	var room: float = PED_ROOM[v.kind]
-	for q in (pedestrians if _ped_box.has_point(v.pos) else []):
+	for q in (pedestrians if _ped_box.has_point(v.pos) and not fleeing else []):
 		var rel: Vector2 = q[0] - v.pos
 		var along := rel.dot(fwd)
 		if along <= 0.0 or along > PED_SEES:
@@ -659,7 +695,7 @@ func _drive(v: Dictionary, dt: float) -> void:
 	want = minf(want, maxf(0.0, (gap - 1.0) / 1.3))
 	want = minf(want, sqrt(2.0 * spec.accel * 2.0 * maxf(0.0, gap - 1.0)))   # and able to stop in it
 	# Buses and trams stop now and then, as if at a stop.
-	if v.kind == "bus" or v.kind == "tram":
+	if (v.kind == "bus" or v.kind == "tram") and not fleeing:
 		v.stop_in -= v.speed * dt
 		if v.stop_in < 30.0 and v.dwell <= 0.0:
 			want = minf(want, maxf(0.0, v.stop_in / 3.0))

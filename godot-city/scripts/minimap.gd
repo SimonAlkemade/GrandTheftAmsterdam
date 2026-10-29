@@ -83,6 +83,12 @@ func _draw_map() -> void:
 				_map.draw_circle(v.pos, DOT.car + 2.0, Color(0.15, 0.35, 1.0) if on else Color(1.0, 0.15, 0.15))
 			else:
 				_map.draw_circle(v.pos, DOT[v.kind], VEHICLE[v.kind])
+	if mission:                           # tourists who want tulips: pink, ringed white
+		for t in mission.tourists:
+			var tp := Vector2(t.pos.x, t.pos.z)
+			if tp.distance_to(p) < VIEW + 10.0:
+				_map.draw_circle(tp, 4.6, Color.WHITE)
+				_map.draw_circle(tp, 3.4, mission.PINK)
 	if crime:
 		for c in crime.cops:
 			if not c.down and Vector2(c.pos.x, c.pos.z).distance_to(p) < VIEW + 10.0:

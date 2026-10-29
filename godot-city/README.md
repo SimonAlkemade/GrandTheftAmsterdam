@@ -86,7 +86,8 @@ where it goes. The text at the bottom says what to do and how far it is; the
 route along the streets is drawn in yellow on the minimap and, in the map
 view (M), over the streets themselves. Each delivery has a clock set by the
 length of the route and pays €25 plus €1 for every 6 seconds to spare; then
-the next parcel is waiting. Run out of time and the parcel goes back.
+the next parcel is waiting. Run out of time and the parcel goes back. Five
+parcels delivered and the job is done: on to Mission 3.
 
 ## Mission 2: a gun, and the police
 
@@ -96,7 +97,10 @@ is yours for €50: 12 rounds in it and 24 more. On foot, **left click** shoots
 where the camera looks (a crosshair shows while you hold it; you turn to aim),
 **R** reloads, and back at the shop €10 buys 24 more rounds. Bullets stop at
 walls, the street and vehicles (a real vehicle takes the knock); a pedestrian
-hit goes down, and everyone within 40 m runs from the shot.
+hit goes down, and everyone within 40 m runs from the shot. The traffic within
+60 m (cars, Cantas, buses, cyclists) drives off flat out for 12 seconds,
+taking whichever way leads away from the shot and stopping for no one on foot
+on the way (trams keep to their rails; police cars come the other way).
 
 Shooting makes you wanted, shown as five stars at the top left: any shot is
 one star, hitting someone two, hitting a police officer three and up, to five.
@@ -111,6 +115,22 @@ way, within 70 m) the stars flash; stay out of sight 10 s plus 5 s a star and
 they give up. `tests/crime_test.gd` plays it through on a grid of test streets:
 
     godot --headless --path godot-city --script tests/crime_test.gd
+
+## Mission 3: tulips for the tourists
+
+After the fifth parcel, the yellow circle leads to the Bloemenmarkt, the
+flower market on the Singel (with a tulip turning over it). Walk in and you
+have ten bunches of tulips, a bouquet in your hand. Among the people in the
+street, up to three at a time are tourists who want some: a tulip turns over
+their heads, and they are pink dots on the minimap; the nearest is the yellow
+blip. Walk up to one and they stop and turn to you; stand by them a moment
+and they buy a bunch for €6 to €12, one each. A tourist you scare off (a
+gunshot), knock down or leave far behind is no longer one, and others turn
+up. Sold out, it is back to the market for more. (`--mission=tulips` starts
+the game straight at Mission 3.) `tests/tulips_test.gd` plays it through on a
+grid of test streets:
+
+    godot --headless --path godot-city --script tests/tulips_test.gd
 
 ## Driving physics
 

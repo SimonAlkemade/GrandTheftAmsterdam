@@ -429,13 +429,19 @@ func _mission_ui() -> void:
 	ui.mission_bar.visible = text != ""
 	if text != "":
 		var d: float = mission.distance_left()
-		ui.mission_text.text = "%s  ·  %s" % [text, ("%d m" % d) if d < 1000.0 else ("%.1f km" % (d / 1000.0))]
+		if mission.target == Vector3.INF:      # (no tourist about just now)
+			ui.mission_text.text = text
+		else:
+			ui.mission_text.text = "%s  ·  %s" % [text, ("%d m" % d) if d < 1000.0 else ("%.1f km" % (d / 1000.0))]
 		ui.mission_clock.visible = mission.state == "deliver"
 		var t := maxf(mission.time_left, 0.0)
 		ui.mission_clock.text = "%d:%02d" % [int(t) / 60, int(t) % 60]
 		ui.mission_clock.add_theme_color_override("font_color", Color(1, 0.3, 0.25) if t < 15.0 else Color(1.0, 0.82, 0.08))
 	ui.cash.visible = mission.state != "off"
-	ui.cash.text = "€ %d\n%d parcel%s" % [mission.money, mission.delivered, "" if mission.delivered == 1 else "s"]
+	if mission.state.begins_with("tulips"):
+		ui.cash.text = "€ %d\n%d tulip%s" % [mission.money, mission.tulips, "" if mission.tulips == 1 else "s"]
+	else:
+		ui.cash.text = "€ %d\n%d parcel%s" % [mission.money, mission.delivered, "" if mission.delivered == 1 else "s"]
 	var ammo: String = crime.ammo_text()
 	ui.crime_text.visible = mode == "walk" and crime.state != "off"
 	ui.crime_text.text = crime.objective() + ("\n" + ammo if ammo != "" else "")
@@ -536,6 +542,8 @@ func _process(delta: float) -> void:
 		ui.loading.visible = false
 		if mission.state == "off" and not args.has("nomission"):
 			mission.start()
+			if args.get("mission", "") == "tulips":     # --mission=tulips: straight to Mission 3
+				mission.start_tulips()
 			crime.start()
 		return
 	var focus: Vector3

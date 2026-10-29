@@ -4,7 +4,8 @@ extends SceneTree
 ## pedestrians in their way (and not for those on the pavement), and a tram
 ## you drive pulls away, brakes, coasts and takes the branch you choose; and
 ## on double track trams keep right, one way per track, turn round on to the
-## other track at the end of the line, and never run through one another.
+## other track at the end of the line, and never run through one another;
+## and cars near a gunshot flee: flat out, away from it.
 ##     godot --headless --path godot-city --script tests/traffic_test.gd
 
 const Traffic := preload("res://scripts/traffic.gd")
@@ -66,6 +67,7 @@ func _run() -> void:
 	await _brakes()
 	await _tram()
 	await _tram_lines()
+	await _flee()
 	print("traffic test: %d failed" % _fails)
 	quit(1 if _fails else 0)
 
@@ -275,3 +277,44 @@ func _tram_lines() -> void:
 	_check(wrong == 0, "always the way their track runs (%d steps wrong)" % wrong)
 	_check(turned > 0, "at the end of the line they come back on the other track (%d)" % turned)
 	_check(overlap >= Traffic.KINDS.tram.len, "and never run into or through each other (closest %.1f m, front to front)" % overlap)
+
+
+func _flee() -> void:
+	traffic.clear()
+	traffic.pedestrians = []
+	# A grid of streets 100 m apart, cut at every crossing.
+	var y0 := 4000.0
+	var lanes := []
+	for k in 7:
+		var c := -300.0 + k * 100.0
+		for seg in 6:
+			var a := -300.0 + seg * 100.0
+			lanes.append({"kind": "road", "w": 8.0, "p": PackedVector2Array([Vector2(a, y0 + c), Vector2(a + 100.0, y0 + c)])})
+			lanes.append({"kind": "road", "w": 8.0, "p": PackedVector2Array([Vector2(c, y0 + a), Vector2(c, y0 + a + 100.0)])})
+	traffic.add_tile("flee_grid", lanes)
+	traffic.focus = Vector3(0, 0, y0)
+	traffic.spawn_radius = 420.0
+	traffic.target = {"car": 24, "bus": 0, "tram": 0, "bike": 0, "canta": 0}
+	for i in 60 * 4: await _step()
+	traffic.target.car = 0
+	for i in 60 * 6: await _step()              # up to speed
+	var shot := Vector3(0, 0, y0)
+	var near: Array = traffic.vehicles.filter(func(v): return v.pos.distance_to(Vector2(0, y0)) < 60.0)
+	var far: Array = traffic.vehicles.filter(func(v): return v.pos.distance_to(Vector2(0, y0)) > 120.0)
+	var n: int = traffic.scare(shot)
+	_check(n == near.size() and n > 0, "a gunshot scares the cars within 60 m (%d of %d)" % [n, traffic.vehicles.size()])
+	_check(far.all(func(v): return not v.has("flee")), "and not those further off")
+	var top := 0.0
+	# Someone standing in the road: a fleeing car does not stop for them.
+	traffic.pedestrians = [[near[0].pos + traffic._front(near[0])[1] * 20.0, Vector2.ZERO]] if near.size() else []
+	var start_d := 0.0
+	for v in near: start_d += v.pos.distance_to(Vector2(0, y0))
+	for i in 60 * 8:
+		await _step()
+		for v in near: top = maxf(top, v.speed)
+	var end_d := 0.0
+	for v in near: end_d += v.pos.distance_to(Vector2(0, y0))
+	print("flee: %d cars, on average %.0f m from the shot, then %.0f m 8 s later, top speed %.0f km/h" % [near.size(), start_d / maxf(near.size(), 1), end_d / maxf(near.size(), 1), top * 3.6])
+	_check(top > Traffic.KINDS.car.max * 1.3, "they drive off flat out (%.0f km/h)" % (top * 3.6))
+	_check(end_d / maxf(near.size(), 1) > 100.0, "away from it (on average %.0f m off after 8 s)" % (end_d / maxf(near.size(), 1)))
+	traffic.pedestrians = []

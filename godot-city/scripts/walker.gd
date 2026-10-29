@@ -50,6 +50,8 @@ var car_speed := 0.0
 var _mouse_idle := 10.0
 var _rack_bike := {}
 var carrying := false          # a parcel (the courier mission)
+var tulips := 0                # bunches of tulips to sell (Mission 3): a bouquet in your hand
+var _bouquet: Node3D
 var _parcel: MeshInstance3D
 var _rng := RandomNumberGenerator.new()
 
@@ -74,6 +76,21 @@ func setup(s, camera: Camera3D) -> void:
 	_parcel.position = Vector3(0, 1.08, -0.34)
 	_parcel.visible = false
 	body.add_child(_parcel)
+	# Tulips, in the left hand: a few red cups on green stems.
+	_bouquet = Node3D.new()
+	var stem := CylinderMesh.new(); stem.top_radius = 0.008; stem.bottom_radius = 0.008; stem.height = 0.34; stem.radial_segments = 4; stem.rings = 1
+	var cup := CylinderMesh.new(); cup.top_radius = 0.035; cup.bottom_radius = 0.02; cup.height = 0.06; cup.radial_segments = 6; cup.rings = 1
+	var sm := StandardMaterial3D.new(); sm.albedo_color = Color("3f8f3a")
+	var tm := StandardMaterial3D.new(); tm.albedo_color = Color("e8213f")
+	for k in 5:
+		var off := Vector3(cos(k * 1.3) * 0.035, 0, sin(k * 1.3) * 0.035)
+		var a := MeshInstance3D.new(); a.mesh = stem; a.material_override = sm; a.position = off + Vector3(0, 0.12, 0)
+		var b := MeshInstance3D.new(); b.mesh = cup; b.material_override = tm; b.position = off * 1.6 + Vector3(0, 0.3, 0)
+		_bouquet.add_child(a); _bouquet.add_child(b)
+	_bouquet.position = Vector3(0, -0.34, -0.04)
+	_bouquet.rotation.x = PI                 # held stems down, the flowers up out of the fist
+	_bouquet.visible = false
+	body.el_l.add_child(_bouquet)
 	# The pistol, in the right hand (along the forearm: aimed, it points ahead).
 	_gun = MeshInstance3D.new()
 	var gb := BoxMesh.new(); gb.size = Vector3(0.04, 0.2, 0.11)
@@ -255,6 +272,10 @@ func _physics_process(delta: float) -> void:
 	body.position.y = (body.rotation.x / 1.25 * 0.9) if state == "swim" else 0.0
 	body.animate(delta, state, speed)
 	_parcel.visible = carrying and state != "swim" and state != "climb"
+	_bouquet.visible = tulips > 0 and not carrying and vehicle == null and state != "swim" and state != "climb"
+	if _bouquet.visible:                 # held up in front
+		body.sh_l.rotation.x = 0.35
+		body.el_l.rotation.x = 1.5
 	if _parcel.visible:                  # both arms round the parcel
 		for arm in [[body.sh_l, body.el_l], [body.sh_r, body.el_r]]:
 			arm[0].rotation.x = 0.55
@@ -659,6 +680,7 @@ func _place(p: Dictionary, near: bool) -> void:
 		at.y = 0.0
 		if _free(at) and _free(at + Vector3(0.6, 0, 0)):
 			p.pos = at; p.heading = _rng.randf() * TAU
+			p.erase("bought")                     # (someone new: they may want tulips too)
 			return
 
 
@@ -744,6 +766,13 @@ func _peds(delta: float) -> void:
 			p.stag -= delta
 			h.animate(delta, "idle", 0.0)
 			h.spine.rotation.x = -0.4
+		elif p.get("wait", 0.0) > 0.0:
+			# Waiting for you (a tourist who wants tulips): standing, turned to you.
+			p.wait -= delta
+			var to: Vector3 = global_position - p.pos
+			p.heading = lerp_angle(p.heading, atan2(-to.x, -to.z), 1.0 - exp(-delta * 5.0))
+			p.pace = 0.0
+			h.animate(delta, "idle", 0.0)
 		else:
 			p.turn -= delta
 			if p.turn <= 0.0:
