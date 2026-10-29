@@ -11,6 +11,7 @@ signal announce(title: String, sub: String)
 
 const Human := preload("res://scripts/human.gd")
 const Models := preload("res://scripts/vehicle_models.gd")
+const Ragdoll := preload("res://scripts/ragdoll.gd")
 
 const START_CASH := 60          # enough for a pistol at once
 const PISTOL := 50              # € for the pistol and two magazines' worth
@@ -182,7 +183,7 @@ func fire() -> void:
 	var victim = null
 	var t_best := t_wall
 	for p in walker.peds:
-		if p.get("dead", false):
+		if p.get("dead", false) or p.has("rag"):         # (someone lying in the street is below the shot)
 			continue
 		var t := _ray_person(from, dir, p.pos)
 		if t < t_best:
@@ -203,11 +204,14 @@ func fire() -> void:
 	# Every shot is a crime; who it hits decides how bad.
 	stars = maxi(stars, 1)
 	if victim != null:
+		var shove := Vector3(dir.x, 0, dir.z).normalized() * 3.0 + Vector3.UP * 0.8   # the bullet's knock
 		if victim[0] == "ped":
 			_down_ped(victim[1])
+			walker.knock(victim[1], shove)
 			stars = maxi(stars, 2)
 		else:
 			victim[1].down = true
+			victim[1].rag = Ragdoll.knock(victim[1].h, shove)
 			stars = clampi(maxi(stars + 1, 3), 1, 5)
 	unseen = 0.0                                            # they know where it came from
 	last_seen = walker.global_position
@@ -405,8 +409,8 @@ func _arrive(v: Dictionary) -> void:
 		var cap := MeshInstance3D.new()
 		var cm := CylinderMesh.new(); cm.top_radius = 0.13; cm.bottom_radius = 0.125; cm.height = 0.08
 		cap.mesh = cm; cap.material_override = Human._m(Color("1d2f57"))
-		cap.position.y = 1.79
-		h.add_child(cap)
+		cap.position.y = 0.12
+		h.head.add_child(cap)
 		cops.append({"h": h, "pos": at, "heading": n.rotation.y, "down": false, "car": v, "last": last_seen})
 
 
@@ -461,7 +465,17 @@ func _run_cop(c: Dictionary, delta: float) -> void:
 	h.rotation = Vector3(0, c.heading, 0)
 
 
+func _free_cop(c: Dictionary) -> void:
+	if c.has("rag"):
+		c.rag.queue_free()
+	c.h.queue_free()
+
+
 func _lie(c: Dictionary) -> void:
+	if c.has("rag"):                                     # limp where they fell
+		var at: Vector3 = c.rag.pelvis()
+		c.pos = Vector3(at.x, 0.0, at.z)
+		return
 	var h: Node3D = c.h
 	h.rotation = Vector3(-PI / 2, c.heading, 0)
 	h.position = Vector3(c.pos.x, 0.18, c.pos.z)
@@ -483,7 +497,7 @@ func _dead_peds(delta: float) -> void:
 func _stand_down(_delta: float) -> void:
 	for c in cops.duplicate():
 		if _dist(c.pos) > 45.0 or c.down and _dist(c.pos) > 25.0:
-			c.h.queue_free()
+			_free_cop(c)
 			cops.erase(c)
 		elif not c.down:
 			c.h.animate(_delta, "idle", 0.0)
@@ -507,7 +521,7 @@ func _busted() -> void:
 	if walker.vehicle != null:
 		walker._get_out()
 	for c in cops:
-		c.h.queue_free()
+		_free_cop(c)
 	cops.clear()
 	for v in cars:
 		if traffic.vehicles.has(v):

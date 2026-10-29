@@ -6,6 +6,7 @@ extends Node3D
 
 var hips: Node3D
 var spine: Node3D
+var head: Node3D
 var sh_l: Node3D; var sh_r: Node3D; var el_l: Node3D; var el_r: Node3D
 var hp_l: Node3D; var hp_r: Node3D; var kn_l: Node3D; var kn_r: Node3D
 var phase := 0.0
@@ -44,7 +45,7 @@ func build(top: Color, legs: Color, skin: Color, hair: Color, shoe: Color, jacke
 	_part(spine, _capsule(0.17, 0.66), mj, Vector3(0, 0.26, 0), Vector3(1.25, 1, 0.75))
 	var neck := CylinderMesh.new(); neck.top_radius = 0.045; neck.bottom_radius = 0.05; neck.height = 0.1
 	_part(spine, neck, ms, Vector3(0, 0.55, 0))
-	var head := _joint(spine, Vector3(0, 0.66, 0))
+	head = _joint(spine, Vector3(0, 0.66, 0))
 	var hs := SphereMesh.new(); hs.radius = 0.115; hs.height = 0.25
 	_part(head, hs, ms)
 	var hair_m := SphereMesh.new(); hair_m.radius = 0.122; hair_m.height = 0.2; hair_m.is_hemisphere = true

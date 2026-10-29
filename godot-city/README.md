@@ -210,6 +210,24 @@ and a passing tram:
 
     godot --headless --path godot-city --script tests/peds_test.gd
 
+### Knocked over: ragdolls
+
+Hit hard enough, a person goes limp: a car, bus, tram or bike doing more than
+about 11 km/h that runs into them, you sprinting into them (walking or jogging
+into someone only nudges them or makes them stagger), or a bullet. Their
+figure comes apart into ten rigid bodies, pelvis, torso and head, upper and
+lower arms and legs, joined at the waist, shoulders, elbows, hips and knees,
+and is thrown the way the hit was going. It tumbles, slides and settles on the
+street, and you, your vehicle and other traffic can push it about. Once they
+have lain still for two seconds they get up and walk on (unless they were
+shot); at most eight people lie in the street at once, and a ninth only
+staggers. `tests/ragdoll_test.gd` checks that a person hit at 25 km/h falls
+flat a few metres on with the limbs joined, comes to rest and is put back
+together; that walking into someone only nudges them, sprinting into them or
+driving into them knocks them over, and that they get up again:
+
+    godot --headless --path godot-city --script tests/ragdoll_test.gd
+
 ### The traffic on its springs
 
 Every car, Canta, bus and tram near you rides on springs: a damped spring per
@@ -264,6 +282,7 @@ another size: `python chunk_godot_tiles.py godot-city/data 375`.
 - `scripts/traffic.gd`, `scripts/vehicle_models.gd`: traffic
 - `scripts/vehicle_physics.gd`: suspension, engine, brakes and steering for what you drive
 - `scripts/walker.gd`, `scripts/human.gd`: the player and pedestrians
+- `scripts/ragdoll.gd`: a person knocked over, gone limp
 - `scripts/bike_rig.gd`: a ridden bike: wheels, crank, and the rider's legs and arms on pedals and grips
 - `scripts/boat.gd`, `scripts/boats.gd`: the floating boats and where they are moored
 - `models/canta.glb`: the Canta, modelled by `blender/make_canta.py`

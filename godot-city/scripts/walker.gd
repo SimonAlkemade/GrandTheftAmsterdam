@@ -10,6 +10,7 @@ extends CharacterBody3D
 ## (from the quay, or swimming) takes the helm; E again gets you out.
 
 const Human := preload("res://scripts/human.gd")
+const Ragdoll := preload("res://scripts/ragdoll.gd")
 const Models := preload("res://scripts/vehicle_models.gd")
 const VPhys := preload("res://scripts/vehicle_physics.gd")
 const TileBuilder := preload("res://scripts/tile_builder.gd")
@@ -111,6 +112,8 @@ func leave() -> void:
 	cam.near = 1.0
 	cam.fov = 45.0
 	for p in peds:
+		if p.has("rag"):
+			p.rag.queue_free()
 		p.h.queue_free()
 	peds.clear()
 
@@ -598,7 +601,54 @@ func _ride() -> void:
 
 # ---- pedestrians ------------------------------------------------------------------
 
+# Hit hard enough, a person goes limp (Ragdoll): by a vehicle doing more than
+# KNOCK_VEHICLE, by you at a sprint, or by a bullet (Crime). Once they lie
+# still they get up and walk on, unless they are dead.
+const KNOCK_VEHICLE := 3.0       # m/s
+const KNOCK_YOU := 4.5           # m/s: a sprint (a run is 6.2, a walk 1.7)
+const MAX_RAGDOLLS := 8          # at once; past that a knock is only a stagger
+const GET_UP := 2.0              # seconds lying still before getting up
+
+
+## Knocks `p` over with velocity `vel`; false (a stagger instead) when too many
+## people already lie in the street.
+func knock(p: Dictionary, vel: Vector3) -> bool:
+	if p.has("rag"):
+		for b in p.rag.bodies:
+			b.linear_velocity += vel * 0.5          # knocked again where they lie
+		return true
+	if peds.filter(func(o): return o.has("rag")).size() >= MAX_RAGDOLLS:
+		p.stag = 1.2
+		return false
+	p.rag = Ragdoll.knock(p.h, vel, clampf(vel.length() / 6.0, 0.3, 2.0))
+	p.flee = 0.0
+	p.lie = 0.0
+	return true
+
+
+# Someone lying in the street: where they lie is where they are; once still
+# they get up there (or, in a canal or a wall, somewhere else).
+func _lying(p: Dictionary, delta: float) -> void:
+	var rag = p.rag
+	var at: Vector3 = rag.pelvis()
+	p.pos = Vector3(at.x, 0.0, at.z)
+	if p.get("dead", false):
+		return
+	p.lie = p.get("lie", 0.0) + delta if rag.settled() else 0.0
+	if p.lie < GET_UP and rag.age < 15.0:
+		return
+	var heading: float = rag.facing()
+	rag.restore()
+	p.erase("rag")
+	if at.y < -0.6 or not _free(p.pos):
+		_place(p, false)
+		return
+	p.heading = heading
+	p.stag = 1.0                                # back on their feet, unsteady
+
 func _place(p: Dictionary, near: bool) -> void:
+	if p.has("rag"):
+		p.rag.restore(); p.erase("rag")
 	for k in 30:
 		var ang := _rng.randf() * TAU
 		var d := (6.0 + _rng.randf() * 50.0) if near else (45.0 + _rng.randf() * 30.0)
@@ -662,6 +712,9 @@ func _peds(delta: float) -> void:
 	var your_vel := Vector2(-sin(heading), -cos(heading)) * speed
 	var cars := _vehicle_segments()
 	for p in peds:
+		if p.has("rag"):
+			_lying(p, delta)
+			continue
 		if p.get("dead", false):
 			continue                              # shot: lying where they fell (Crime)
 		if p.pos.distance_to(global_position) > 85.0:
@@ -702,7 +755,7 @@ func _peds(delta: float) -> void:
 			if vehicle == null:
 				others.append([you, your_vel, YOU_CLEAR, YOU_SPACE, 2.0])   # in a vehicle, you are its body below
 			for o in peds:
-				if o != p and not o.get("dead", false):
+				if o != p and not o.get("dead", false) and not o.has("rag"):
 					others.append([Vector2(o.pos.x, o.pos.z), Vector2(-sin(o.heading), -cos(o.heading)) * float(o.speed), PED_CLEAR, PED_SPACE, 1.0])
 			for o in others:
 				var rel: Vector2 = o[0] - me              # where it is, from here
@@ -783,11 +836,11 @@ func _peds(delta: float) -> void:
 	# Nobody overlaps: push pairs apart, and everyone out of your way.
 	for i in peds.size():
 		var a: Dictionary = peds[i]
-		if a.get("dead", false):
+		if a.get("dead", false) or a.has("rag"):
 			continue
 		for j in range(i + 1, peds.size()):
 			var b: Dictionary = peds[j]
-			if b.get("dead", false):
+			if b.get("dead", false) or b.has("rag"):
 				continue
 			var d: Vector3 = a.pos - b.pos; d.y = 0.0
 			if d.length() < PED_GAP:
@@ -798,20 +851,25 @@ func _peds(delta: float) -> void:
 		off2.y = 0.0
 		if off2.length() < YOU_GAP:
 			var n2 := off2.normalized() if off2.length() > 0.001 else Vector3(1, 0, 0)
+			if vehicle == null and speed > KNOCK_YOU and state != "swim":
+				# Sprint into them and they go over: with you, and off to the side.
+				var fwd3 := Vector3(-sin(heading), 0, -cos(heading))
+				knock(a, fwd3 * speed * 0.8 + n2 * 1.5 + Vector3.UP * 1.2)
+				continue
 			a.pos += n2 * (YOU_GAP - off2.length())
 			if speed > 3.5 and a.stag <= 0.0: a.stag = 0.9      # run into them and they stagger
 	# Tell the traffic where everyone is walking, so drivers brake for them.
 	if traffic:
 		var seen := []
 		for p in peds:
-			if p.get("dead", false):
+			if p.get("dead", false) or p.has("rag"):
 				continue                         # nobody brakes for... well
 			var pace: float = p.get("pace", 0.0) if p.stag <= 0.0 else 0.0   # as fast as they really walk (0 waiting at the kerb)
 			seen.append([Vector2(p.pos.x, p.pos.z), Vector2(-sin(p.heading), -cos(p.heading)) * pace])
 		traffic.pedestrians = seen
 	# ... and nobody stands inside a car, bus, tram or bike.
 	for a in peds:
-		if a.get("dead", false):
+		if a.get("dead", false) or a.has("rag"):
 			continue
 		for sg in cars:
 			var me := Vector2(a.pos.x, a.pos.z)
@@ -820,9 +878,16 @@ func _peds(delta: float) -> void:
 			var keep: float = sg[2] + VEHICLE_GAP
 			if d < keep:
 				var n3 := (me - c) / d if d > 0.001 else Vector2(1, 0)
+				var vv: Vector2 = sg[3]
+				if vv.length() > KNOCK_VEHICLE and d < sg[2] + 0.35:
+					# Hit: thrown the way it was going, up over the bonnet and aside.
+					knock(a, Vector3(vv.x, 0, vv.y) * 1.1 + Vector3(n3.x, 0, n3.y) * 1.5 + Vector3.UP * (1.0 + vv.length() * 0.12))
+					break
 				var to := c + n3 * keep
 				a.pos = Vector3(to.x, a.pos.y, to.y)
 	for p in peds:
+		if p.has("rag"):
+			continue                                # the ragdoll has them
 		var gy = _ground(p.pos)
 		var y: float = gy if gy != null else 0.0
 		if p.get("dead", false):                   # on their back
