@@ -23,7 +23,7 @@ const BIKE_GROUP := [1, 1, 1, 2, 2, 3]
 const BIKE_FROM_WALL := 0.45
 const WATER_Y := -1.4          # canal water lies well below the street...
 const QUAY_FOOT := -2.6        # ...between stone quay walls that go on down below it
-const BIKE_GAP := 0.65
+const BIKE_GAP := 3.0          # between the bikes of a group (CityStreamer.BIKE_SPACE)
 # Bridges hump over the canals the Amsterdam way: the data's bridges run from
 # quay to quay, so a ramp rises from each quay to a level middle that leaves a
 # sloep (and whoever stands at its helm) room underneath. Heights are above the

@@ -16,6 +16,7 @@ const STREET_MATS := ["road", "bike", "walk", "tram", "rail", "rails", "bridge"]
 const MINI_CELL := 64.0
 const BIKE_CELL := 100.0     # parked bikes are drawn per block of this size...
 const BIKE_SEEN := 140.0     # ...and only this close to the camera
+const BIKE_SPACE := 3.0      # metres: no parked bike closer than this to another
 const FURNITURE_SEEN := 220.0   # lamps, benches, bins, signals, bollards: drawn this close (per BIKE_CELL block)
 const TREES_SEEN := 1100.0      # trees: per chunk, this close to its middle
 const JS_FETCH := """
@@ -441,17 +442,33 @@ func _instance_buffers(points: Dictionary, street_bikes: Array, bridge_cells: Di
 		var p: PackedVector2Array = points[kind]
 		rng.seed = p.size() * 31 + kind.length()
 		var yaws := PackedFloat32Array()
-		if kind == "bikes":                  # three parked bikes side by side per rack
+		if kind == "bikes":                  # three parked bikes per rack, BIKE_SPACE apart
 			var q := PackedVector2Array()
+			var qy := PackedFloat32Array()
 			for v in p:
 				var rack := rng.randf() * TAU
 				var side := Vector2(cos(rack), -sin(rack))
-				for k in [-0.65, 0.0, 0.65]:
+				for k in [-BIKE_SPACE, 0.0, BIKE_SPACE]:
 					q.append(v + side * k)
-					yaws.append(rack + rng.randf_range(-0.08, 0.08))
+					qy.append(rack + rng.randf_range(-0.08, 0.08))
 			q.append_array(street_bikes[0])  # and the ones along the house fronts
-			yaws.append_array(street_bikes[1])
-			p = q
+			qy.append_array(street_bikes[1])
+			# Racks the data has close together: keep a bike only where it has
+			# BIKE_SPACE to itself.
+			p = PackedVector2Array()
+			var cells := {}
+			for i in q.size():
+				var c := Vector2i(floori(q[i].x / BIKE_SPACE), floori(q[i].y / BIKE_SPACE))
+				var clear := true
+				for dx in range(-1, 2):
+					for dy in range(-1, 2):
+						for o in cells.get(c + Vector2i(dx, dy), []):
+							if (o as Vector2).distance_to(q[i]) < BIKE_SPACE:
+								clear = false
+				if clear:
+					p.append(q[i]); yaws.append(qy[i])
+					if not cells.has(c): cells[c] = []
+					cells[c].append(q[i])
 		var buf := PackedFloat32Array()
 		buf.resize(p.size() * 16)
 		for i in p.size():

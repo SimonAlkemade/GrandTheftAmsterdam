@@ -1,10 +1,12 @@
 extends SceneTree
 ## A chunk built in slices (as the browser does it, with no threads) comes out
 ## the same as one built at once, while the game keeps getting frames: no
-## gap between two frames of more than a few slices' time.
+## gap between two frames of more than a few slices' time. And the parked
+## bikes in it stand at least 3 m apart.
 ##     godot --headless --path godot-city --script tests/streaming_test.gd
 
 const TileBuilder := preload("res://scripts/tile_builder.gd")
+const Streamer := preload("res://scripts/city_streamer.gd")
 
 var _fails := 0
 
@@ -48,5 +50,18 @@ func _run() -> void:
 	for m in whole.surfaces:
 		if whole.surfaces[m][0].size() != sliced.surfaces[m][0].size(): same = false
 	_check(same, "and the same chunk as built at once")
+	# Its parked bikes: in racks, and in groups along the house fronts.
+	var st = Streamer.new()
+	var inst: Dictionary = st._instance_buffers(whole.points, whole.street_bikes, whole.bridge_cells)
+	var n: int = inst.bikes[0]
+	var buf: PackedFloat32Array = inst.bikes[1]
+	var closest := INF
+	for i in n:
+		var bi := Vector2(buf[i * 16 + 3], buf[i * 16 + 11])
+		for j in range(i + 1, n):
+			closest = minf(closest, bi.distance_to(Vector2(buf[j * 16 + 3], buf[j * 16 + 11])))
+	st.free()
+	print("parked bikes: %d, the closest two %.2f m apart" % [n, closest])
+	_check(n > 20 and closest >= Streamer.BIKE_SPACE - 0.001, "parked bikes stand at least %.0f m apart (closest %.2f m, %d bikes)" % [Streamer.BIKE_SPACE, closest, n])
 	print("streaming test: %d failed" % _fails)
 	quit(1 if _fails else 0)

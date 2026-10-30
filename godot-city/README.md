@@ -285,7 +285,8 @@ traction, brakes, coasting and points on a test layout:
 ## Traffic
 
 Cyclists ride the bike paths and the edges of the streets, and parked bikes
-stand at the city's bike racks and in small groups along the house fronts. Press E next to a parked bike, or next to a
+stand at the city's bike racks and in small groups along the house fronts,
+never closer than 3 m to one another. Press E next to a parked bike, or next to a
 cyclist, to ride it (Shift pedals hard). Red Cantas, the narrow Dutch microcars, potter along the streets too (E to
 drive one, 45 km/h tops). Press E next to a car to take the wheel (see
 Driving physics above for the controls). Press E next to
