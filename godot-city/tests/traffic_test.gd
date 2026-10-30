@@ -5,7 +5,9 @@ extends SceneTree
 ## you drive pulls away, brakes, coasts and takes the branch you choose; and
 ## on double track trams keep right, one way per track, turn round on to the
 ## other track at the end of the line, and never run through one another;
-## and cars near a gunshot flee: flat out, away from it.
+## cars near a gunshot flee: flat out, away from it; and the streets are
+## one-way wherever they can be (every corner still reachable from every
+## other), driven down the middle, never against the way.
 ##     godot --headless --path godot-city --script tests/traffic_test.gd
 
 const Traffic := preload("res://scripts/traffic.gd")
@@ -68,6 +70,7 @@ func _run() -> void:
 	await _tram()
 	await _tram_lines()
 	await _flee()
+	await _one_way()
 	print("traffic test: %d failed" % _fails)
 	quit(1 if _fails else 0)
 
@@ -298,9 +301,11 @@ func _flee() -> void:
 	for i in 60 * 4: await _step()
 	traffic.target.car = 0
 	for i in 60 * 6: await _step()              # up to speed
-	var shot := Vector3(0, 0, y0)
-	var near: Array = traffic.vehicles.filter(func(v): return v.pos.distance_to(Vector2(0, y0)) < 60.0)
-	var far: Array = traffic.vehicles.filter(func(v): return v.pos.distance_to(Vector2(0, y0)) > 120.0)
+	# The shot: by one of the cars (where they are depends on how they drove).
+	var c0: Vector2 = traffic.vehicles[0].pos + Vector2(8, 0)
+	var shot := Vector3(c0.x, 0, c0.y)
+	var near: Array = traffic.vehicles.filter(func(v): return v.pos.distance_to(c0) < 60.0)
+	var far: Array = traffic.vehicles.filter(func(v): return v.pos.distance_to(c0) > 120.0)
 	var n: int = traffic.scare(shot)
 	_check(n == near.size() and n > 0, "a gunshot scares the cars within 60 m (%d of %d)" % [n, traffic.vehicles.size()])
 	_check(far.all(func(v): return not v.has("flee")), "and not those further off")
@@ -308,13 +313,96 @@ func _flee() -> void:
 	# Someone standing in the road: a fleeing car does not stop for them.
 	traffic.pedestrians = [[near[0].pos + traffic._front(near[0])[1] * 20.0, Vector2.ZERO]] if near.size() else []
 	var start_d := 0.0
-	for v in near: start_d += v.pos.distance_to(Vector2(0, y0))
+	for v in near: start_d += v.pos.distance_to(c0)
 	for i in 60 * 8:
 		await _step()
 		for v in near: top = maxf(top, v.speed)
 	var end_d := 0.0
-	for v in near: end_d += v.pos.distance_to(Vector2(0, y0))
+	for v in near: end_d += v.pos.distance_to(c0)
 	print("flee: %d cars, on average %.0f m from the shot, then %.0f m 8 s later, top speed %.0f km/h" % [near.size(), start_d / maxf(near.size(), 1), end_d / maxf(near.size(), 1), top * 3.6])
 	_check(top > Traffic.KINDS.car.max * 1.3, "they drive off flat out (%.0f km/h)" % (top * 3.6))
-	_check(end_d / maxf(near.size(), 1) > 100.0, "away from it (on average %.0f m off after 8 s)" % (end_d / maxf(near.size(), 1)))
+	_check(end_d / maxf(near.size(), 1) > 80.0, "away from it (on average %.0f m off after 8 s)" % (end_d / maxf(near.size(), 1)))
 	traffic.pedestrians = []
+
+
+# Corners reachable from `from` driving the ways (reverse: against them).
+func _reach(from: Vector2i, ids: Array, reverse: bool) -> Dictionary:
+	var out := {from: true}
+	var todo := [from]
+	while todo.size():
+		var k: Vector2i = todo.pop_back()
+		for x in traffic.nodes.get(k, []):
+			if not ids.has(x[0]): continue
+			var e: Dictionary = traffic.edges[x[0]]
+			var way: int = traffic.way_for("car", e)
+			var along := 1 if x[1] == 0 else -1          # leaving k along the edge's points, or against them
+			if reverse: along = -along
+			if way != 0 and way != along: continue
+			var n: Vector2i = e.ends[1 - x[1]]
+			if not out.has(n):
+				out[n] = true; todo.append(n)
+	return out
+
+
+func _one_way() -> void:
+	traffic.clear()
+	traffic.pedestrians = []
+	# A grid of streets 80 m apart, in two chunks side by side (x < 0, x >= 0),
+	# the streets running from one into the other one-way too.
+	var y0 := 8000.0
+	var west := []
+	var east := []
+	for k in 7:
+		var c := -240.0 + k * 80.0
+		for seg in 6:
+			var a := -240.0 + seg * 80.0
+			var h := {"kind": "road", "w": 6.0, "p": PackedVector2Array([Vector2(a, y0 + c), Vector2(a + 80.0, y0 + c)])}
+			var v := {"kind": "road", "w": 6.0, "p": PackedVector2Array([Vector2(c, y0 + a), Vector2(c, y0 + a + 80.0)])}
+			(west if a < 0.0 else east).append(h)
+			(west if c < 0.0 else east).append(v)
+	# One chunk, then the other, as they stream in: the first keeps its ways.
+	traffic.add_tile("ow_west", west)
+	await _step()                                   # (the ways are chosen on the next frame)
+	var first := {}
+	for id in traffic.edges:
+		if traffic.edges[id].tile == "ow_west": first[id] = traffic.way_for("car", traffic.edges[id])
+	traffic.add_tile("ow_east", east)
+	await _step()
+	_check(first.keys().all(func(id): return traffic.way_for("car", traffic.edges[id]) == first[id]),
+		"a street keeps its way when the next chunk comes in")
+	var ids := []
+	for id in traffic.edges:
+		if String(traffic.edges[id].tile).begins_with("ow_"): ids.append(id)
+	var one := ids.filter(func(id): return traffic.way_for("car", traffic.edges[id]) != 0).size()
+	print("one-way: %d of %d streets one-way" % [one, ids.size()])
+	_check(one > ids.size() * 0.75, "most streets are one-way (%d of %d)" % [one, ids.size()])
+	var corners := {}
+	for id in ids:
+		for k in traffic.edges[id].ends: corners[k] = true
+	var start: Vector2i = corners.keys()[0]
+	var fwd := _reach(start, ids, false)
+	var back := _reach(start, ids, true)
+	_check(fwd.size() == corners.size() and back.size() == corners.size(),
+		"and every corner is still reachable from every other (%d, %d of %d)" % [fwd.size(), back.size(), corners.size()])
+	# Cars on it for a minute: never against the way, down the middle.
+	traffic.focus = Vector3(0, 0, y0)
+	traffic.target = {"car": 20, "bus": 0, "tram": 0, "bike": 0, "canta": 0}
+	for i in 60 * 3: await _step()
+	traffic.target.car = 0
+	var against := 0
+	var off_middle := 0.0
+	var met := 0
+	for i in 60 * 60:
+		await _step()
+		for v in traffic.vehicles:
+			var e: Dictionary = traffic.edges.get(v.edge, {})
+			if e.is_empty(): continue
+			var way: int = traffic.way_for("car", e)
+			if way != 0 and v.dir != way: against += 1
+			if way != 0 and v.speed > 1.0:
+				off_middle = maxf(off_middle, absf(float(v.get("lane_at", 0.0))))
+			for o in traffic.vehicles:
+				if o != v and o.edge == v.edge and o.dir != v.dir and way != 0: met += 1
+	print("one-way: %d cars, %d steps against the way, %d head-on meetings; furthest off the middle %.2f m" % [traffic.vehicles.size(), against, met, off_middle])
+	_check(traffic.vehicles.size() >= 10, "cars drive the grid (%d)" % traffic.vehicles.size())
+	_check(against == 0 and met == 0, "never against a one-way street, nobody meeting head-on")

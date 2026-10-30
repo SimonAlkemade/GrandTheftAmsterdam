@@ -105,6 +105,8 @@ func add_tile(key: String, lanes: Array) -> void:
 		by_kind[l.kind].append(id)
 		if l.kind == "tram":
 			_index_tram(e)
+		elif l.kind == "road":
+			_roads_dirty = true
 
 
 func remove_tile(key: String) -> void:
@@ -119,6 +121,8 @@ func remove_tile(key: String) -> void:
 				nodes[k] = nodes[k].filter(func(x): return not gone.has(x[0]))
 				if nodes[k].is_empty(): nodes.erase(k)
 		by_kind[e.kind].erase(id)
+		if e.kind == "road":
+			_roads_dirty = true
 		if e.kind == "tram":
 			for c in e.get("cells", []):
 				_tram_cells[c] = _tram_cells[c].filter(func(x): return x != id)
@@ -146,10 +150,128 @@ func _front(v: Dictionary) -> Array:
 	var r := _at(e, v.s if v.dir == 1 else e.len - v.s)
 	var fwd: Vector2 = r[1] * v.dir
 	var right := Vector2(-fwd.y, fwd.x)
+	return [r[0] + right * float(v.get("lane_at", _lane(v, e))), fwd]
+
+
+# How far right of the street's middle a vehicle drives: the middle of a
+# one-way street, its own side of a two-way one.
+func _lane(v: Dictionary, e: Dictionary) -> float:
 	var lane: float = KINDS[v.kind].lane
 	if v.kind == "bike":                  # the middle of a bike path, the edge of a street
-		lane = 0.5 if e.kind == "bike" else minf(lane, e.w / 2.0 - 0.6)
-	return [r[0] + right * lane, fwd]
+		return 0.5 if e.kind == "bike" else minf(lane, e.w / 2.0 - 0.6)
+	var way := way_for(v.kind, e)
+	if way != 0:
+		return 0.0 if v.dir == way else 2.1   # the middle; or (caught going against it) far right
+	return lane
+
+
+# ---- one-way streets -------------------------------------------------------------
+# Every street that can be is one-way, and driven down the middle: nothing
+# comes the other way to hit. The ways are chosen by a depth-first search
+# (Robbins: a street on a loop can be one-way and every corner stays
+# reachable from every other): down the search tree, and back up the loops.
+# A street everything beyond hangs on (a dead end) stays two-way, each way
+# keeping to its side. A street keeps its way once it has one: as chunks come
+# in, only their new streets are given ways, each part of the network already
+# done counting as one corner, so the loops close through it and it all still
+# joins up (in the browser, a slice a frame).
+
+const ONE_WAY := ["car", "canta", "bus"]     # (cyclists ride both ways, at the side)
+const ORIENT_USEC := 3000                    # (browser) a slice of the search per frame
+var _oneway := {}                            # edge id -> 1 along its points, -1 against, 0 both ways
+var _roads_dirty := false
+var _orienting := false
+
+
+## The way vehicles of `kind` may drive edge e: 1, -1, or 0 (both).
+func way_for(kind: String, e: Dictionary) -> int:
+	return int(_oneway.get(e.id, 0)) if kind in ONE_WAY and e.kind == "road" else 0
+
+
+func _orient_roads() -> void:
+	_orienting = true
+	_roads_dirty = false
+	var web := OS.has_feature("web")
+	var t0 := Time.get_ticks_usec()
+	for id in _oneway.keys():
+		if not edges.has(id):
+			_oneway.erase(id)
+	# The parts of the network already done, each as one corner.
+	var parent := {}
+	var find := func(k: Vector2i) -> Vector2i:
+		var r := k
+		while parent.has(r) and parent[r] != r:
+			r = parent[r]
+		var c := k
+		while parent.has(c) and parent[c] != r:     # (shorten the way for next time)
+			var nx: Vector2i = parent[c]; parent[c] = r; c = nx
+		return r
+	var fresh := []
+	for id in by_kind["road"]:
+		var e: Dictionary = edges[id]
+		if not _oneway.has(id):
+			fresh.append(id)
+			continue
+		var a: Vector2i = find.call(e.ends[0]); var b: Vector2i = find.call(e.ends[1])
+		if not parent.has(a): parent[a] = a
+		if not parent.has(b): parent[b] = b
+		if a != b:
+			parent[a] = b
+	if fresh.is_empty():
+		_orienting = false
+		return
+	var adj := {}                           # corner -> [[edge id, the other end, way from here to there]]
+	var way := {}
+	for id in fresh:
+		var e: Dictionary = edges[id]
+		var a: Vector2i = find.call(e.ends[0]); var b: Vector2i = find.call(e.ends[1])
+		if a == b:
+			way[id] = 1 if e.ends[0] != e.ends[1] else 0   # both ends in a part already joined up
+			continue
+		if not adj.has(a): adj[a] = []
+		if not adj.has(b): adj[b] = []
+		adj[a].append([id, b, 1]); adj[b].append([id, a, -1])
+	var disc := {}
+	var low := {}
+	var t := 0
+	var roots := adj.keys()
+	roots.sort()                            # (the same streets, the same ways)
+	for root in roots:
+		if disc.has(root):
+			continue
+		disc[root] = t; low[root] = t; t += 1
+		var stack := [[root, -1, 0]]        # [corner, the edge in, next neighbour to look at]
+		while stack.size():
+			if web and Time.get_ticks_usec() - t0 > ORIENT_USEC:
+				await get_tree().process_frame
+				t0 = Time.get_ticks_usec()
+			var top: Array = stack[stack.size() - 1]
+			var v: Vector2i = top[0]
+			var nb: Array = adj[v]
+			if top[2] < nb.size():
+				var x: Array = nb[top[2]]
+				top[2] += 1
+				var id: int = x[0]
+				if id == top[1] or way.has(id):
+					continue
+				way[id] = x[2]                  # from v on to w: down the tree, or back up a loop
+				var w: Vector2i = x[1]
+				if not disc.has(w):
+					disc[w] = t; low[w] = t; t += 1
+					stack.append([w, id, 0])
+				else:
+					low[v] = mini(low[v], disc[w])
+			else:
+				stack.pop_back()
+				if stack.size():
+					var u: Vector2i = stack[stack.size() - 1][0]
+					low[u] = mini(low[u], low[v])
+					if low[v] > disc[u]:
+						way[top[1]] = 0           # a bridge: everything beyond hangs on it
+	for id in way:
+		if edges.has(id):
+			_oneway[id] = way[id]
+	_orienting = false
 
 
 # ---- one-way tram tracks -----------------------------------------------------------
@@ -284,6 +406,8 @@ func _spawn(kind: String) -> void:
 		var dir := 1 if _rng.randf() < 0.5 else -1
 		if kind == "tram" and tram_way(e) != 0:
 			dir = tram_way(e)
+		if way_for(kind, e) != 0:
+			dir = way_for(kind, e)
 		var v := {"kind": kind, "edge": e.id, "dir": dir,
 			"s": _rng.randf_range(spec.len + 1.0, e.len - 1.0), "speed": spec.max * 0.6, "stuck": 0.0, "ghost": 0.0,
 			"stop_in": _rng.randf_range(150, 400), "dwell": 0.0, "trail": []}
@@ -482,19 +606,34 @@ func _next(v: Dictionary) -> bool:
 	var k: Vector2i = e.ends[at_end]
 	var heading: Vector2 = _front(v)[1]
 	var options := []
+	var wrong := []
+	var narrow := []                          # (a bus: streets narrower than it likes)
 	for x in nodes.get(k, []):
 		if x[0] == v.edge: continue
 		var ne: Dictionary = edges[x[0]]
-		if not _usable(v.kind, ne): continue
+		if not _usable(v.kind, ne):
+			if v.kind == "bus" and ne.kind == "road" and way_for(v.kind, ne) in [0, 1 if x[1] == 0 else -1]:
+				narrow.append([x[0], 1 if x[1] == 0 else -1, 0.0])
+			continue
 		var ndir := 1 if x[1] == 0 else -1
 		if v.kind == "tram" and not v.get("driven", false):
 			var way := tram_way(ne)
 			if way != 0 and way != ndir: continue     # the other line's track
+		if not v.has("chase") and not v.get("driven", false) and way_for(v.kind, ne) not in [0, ndir]:
+			wrong.append([x[0], ndir, 0.0])
+			continue                                   # a one-way street, the wrong way in
 		var start := _at(ne, 0.0 if ndir == 1 else ne.len)
 		var turn: float = heading.dot(start[1] * ndir)
 		options.append([x[0], ndir, turn])
 	if options.is_empty():
-		return false
+		options = narrow
+	if options.is_empty():
+		# Every way on is a one-way street the wrong way in: on a two-way
+		# street turn round, as at a dead end; only on a one-way one (which
+		# should never come to this) take the wrong way.
+		if wrong.is_empty() or way_for(v.kind, e) == 0:
+			return false
+		options = wrong
 	if v.has("chase"):
 		# A police car: the shortest way by road to the call. Once at a street
 		# end right by it, it has arrived.
@@ -551,6 +690,8 @@ func _next(v: Dictionary) -> bool:
 
 
 func _process(delta: float) -> void:
+	if _roads_dirty and not _orienting:
+		_orient_roads()
 	if not enabled:
 		return
 	delta = minf(delta, 0.1)
@@ -635,6 +776,10 @@ func _drive(v: Dictionary, dt: float) -> void:
 	var e: Dictionary = edges.get(v.edge, {})
 	if e.is_empty():
 		_despawn(v); return
+	# Into the middle of a one-way street, or over to the right on a two-way
+	# one: gently, over a few metres.
+	var lane_to := _lane(v, e)
+	v.lane_at = move_toward(float(v.get("lane_at", lane_to)), lane_to, maxf(v.speed, 2.0) * dt * 0.25)
 	var f := _front(v)
 	var fwd: Vector2 = f[1]
 	# Slow for the bend ahead.

@@ -274,8 +274,21 @@ leave stays parked where you left it.
 
 `scripts/traffic.gd` joins every tile's road and tram-track polylines into
 one graph and drives about 70 cars, 7 buses and 9 trams around you. Cars
-keep right and keep their distance, including from you. Everything slows
-for bends. Buses use only wide roads; trams use only tram tracks. Buses and
+keep their distance, including from you, and everything slows for bends.
+
+The streets are one-way wherever they can be, and cars, Cantas and buses
+drive down the middle of them: nothing comes the other way to hit. (The map
+data has no one-way signs, so the ways are made up, but so that every corner
+can still be reached from every other: a depth-first search over the street
+network, Robbins's way, gives every street on a loop a direction, down the
+search tree and back up the loops.) A street everything beyond hangs on, a
+dead end, stays two-way, each way keeping to its side, and a car that comes
+to the end of one turns round. In the old centre about three streets in five
+come out one-way. A street keeps its way once it has one: as chunks stream
+in, only their new streets are given ways, with the network already there
+counting as one corner, so the loops close through it. Cyclists still ride
+both ways, at the side of the street; police cars on a call go any way they
+like; what you drive is up to you. Buses use only wide roads; trams use only tram tracks. Buses and
 trams stop now and then, as if at a stop. Each 30 m tram is three sections
 plus bellows, articulated along the path its front has driven.
 
