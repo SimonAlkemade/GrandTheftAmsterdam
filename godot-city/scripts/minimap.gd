@@ -90,6 +90,11 @@ func _draw_map() -> void:
 				_map.draw_circle(tp, 4.6, Color.WHITE)
 				_map.draw_circle(tp, 3.4, mission.PINK)
 	if crime:
+		for q in crime.pickups:               # pistols lying about: orange
+			var qp := Vector2(q.pos.x, q.pos.z)
+			if qp.distance_to(p) < VIEW + 10.0:
+				_map.draw_circle(qp, 5.0, Color(0, 0, 0, 0.7))
+				_map.draw_circle(qp, 3.8, crime.ORANGE)
 		for c in crime.cops:
 			if not c.down and Vector2(c.pos.x, c.pos.z).distance_to(p) < VIEW + 10.0:
 				_map.draw_circle(Vector2(c.pos.x, c.pos.z), 3.2, Color(0.2, 0.45, 1.0))

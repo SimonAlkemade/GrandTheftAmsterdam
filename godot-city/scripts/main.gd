@@ -400,7 +400,7 @@ func _mission_hud(layer: CanvasLayer) -> void:
 	var say := func(title, sub):
 		ui.big_title.text = title
 		ui.big_sub.text = sub
-		ui.big_title.add_theme_color_override("font_color", Color(0.95, 0.2, 0.2) if title == "BUSTED" else Color(1.0, 0.82, 0.08))
+		ui.big_title.add_theme_color_override("font_color", Color(0.95, 0.2, 0.2) if title in ["BUSTED", "WASTED"] else (Color(0.55, 0.8, 1.0) if title == "TASERED" else Color(1.0, 0.82, 0.08)))
 		big.modulate.a = 1.0
 		var tw := create_tween()
 		tw.tween_interval(3.0)

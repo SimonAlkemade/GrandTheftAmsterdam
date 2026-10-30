@@ -51,6 +51,16 @@ var _mouse_idle := 10.0
 var _rack_bike := {}
 var carrying := false          # a parcel (the courier mission)
 var tulips := 0                # bunches of tulips to sell (Mission 3): a bouquet in your hand
+# Health: a taser's darts, or a car running you over, take some off; it comes
+# back by itself after a while without harm. At 0 you are wasted (Crime).
+const MAX_HEALTH := 100.0
+const HEAL_AFTER := 6.0         # seconds without harm before it comes back...
+const HEAL_RATE := 5.0          # ...this much a second
+const HIT_BY := 4.0             # m/s: a vehicle faster than this knocks you down
+var health := MAX_HEALTH
+var stun := 0.0                 # seconds left lying on the ground (tasered, run over)
+var _since_hurt := 99.0
+var _rag = null                 # your own ragdoll while you are down
 var _bouquet: Node3D
 var _parcel: MeshInstance3D
 var _rng := RandomNumberGenerator.new()
@@ -136,11 +146,14 @@ func leave() -> void:
 			p.rag.queue_free()
 		p.h.queue_free()
 	peds.clear()
+	get_up()
 
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not active:
 		return
+	if stun > 0.0 and not (event is InputEventMouseMotion):
+		return                           # (down: no getting in, no shooting)
 	# Look with the captured mouse, or by dragging when it is free (trackpads).
 	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_E:
 		if vehicle != null:
@@ -190,6 +203,20 @@ func _physics_process(delta: float) -> void:
 	if not active:
 		return
 	_mouse_idle += delta
+	_since_hurt += delta
+	if _since_hurt > HEAL_AFTER and health > 0.0:
+		health = minf(MAX_HEALTH, health + HEAL_RATE * delta)
+	if stun > 0.0 or _rag != null:
+		# Down on the street: no say in it until you get up again.
+		stun -= delta
+		if _rag != null:
+			var at: Vector3 = _rag.pelvis()
+			global_position = Vector3(at.x, global_position.y, at.z)   # (the camera goes with you)
+		if stun <= 0.0:
+			get_up()
+		_peds(delta)
+		_camera(delta)
+		return
 	if vehicle != null:
 		if vehicle.kind == "boat":
 			_steer_boat(delta)
@@ -732,10 +759,60 @@ func _vehicle_segments() -> Array:
 			out.append([c - axis * half, c + axis * half, float(HALF_WIDTH[v.kind]), vel])
 	return out
 
+## Harm: `amount` off your health.
+func hurt(amount: float) -> void:
+	health = maxf(0.0, health - amount)
+	_since_hurt = 0.0
+
+
+## Down you go, limp, thrown with `vel`, for `secs` seconds (a taser, a car).
+func knock_down(vel: Vector3, secs: float) -> void:
+	if vehicle != null or body == null:
+		return
+	stun = maxf(stun, secs)
+	speed = 0.0; vy = 0.0
+	if _rag == null:
+		_rag = Ragdoll.knock(body, vel, clampf(vel.length() / 6.0, 0.3, 2.0), true)
+
+
+## Back on your feet where you lie.
+func get_up() -> void:
+	stun = 0.0
+	if _rag == null:
+		return
+	var at: Vector3 = _rag.pelvis()
+	var face: float = _rag.facing()
+	_rag.restore()
+	_rag = null
+	var p := Vector3(at.x, 0.0, at.z)
+	if _free(p) and streamer.water_at(p) != 1:
+		global_position = Vector3(p.x, global_position.y, p.z)
+	heading = face
+	state = "idle"
+
+
+# A vehicle (yours left aside) running into you: knocked down and hurt, the
+# faster the worse.
+func _hit_by_traffic(cars: Array) -> void:
+	var me := Vector2(global_position.x, global_position.z)
+	for sg in cars:
+		var vel: Vector2 = sg[3]
+		if vel.length() < HIT_BY:
+			continue
+		var c := Geometry2D.get_closest_point_to_segment(me, sg[0], sg[1])
+		if c.distance_to(me) < float(sg[2]) + 0.3:
+			var away := (me - c).normalized() if me.distance_to(c) > 0.01 else vel.normalized().orthogonal()
+			hurt(clampf(vel.length() * 4.0, 10.0, 90.0))
+			knock_down(Vector3(vel.x, 0, vel.y) * 1.1 + Vector3(away.x, 0, away.y) * 1.5 + Vector3.UP * (1.0 + vel.length() * 0.12), 3.0)
+			return
+
+
 func _peds(delta: float) -> void:
 	var you := Vector2(global_position.x, global_position.z)
 	var your_vel := Vector2(-sin(heading), -cos(heading)) * speed
 	var cars := _vehicle_segments()
+	if vehicle == null and _rag == null:
+		_hit_by_traffic(cars)
 	for p in peds:
 		if p.has("rag"):
 			_lying(p, delta)

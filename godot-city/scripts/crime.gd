@@ -6,6 +6,14 @@ extends Node3D
 ## one who reaches you while you are on foot (or sitting still in a vehicle)
 ## arrests you: BUSTED, a fine, and the pistol is gone. Out of their sight the
 ## stars flash, and once you have stayed out of sight long enough they clear.
+##
+## Pistols also lie about in the street (orange, turning over a ring): walk
+## over one and it is yours, with PICKUP_ROUNDS in it, gone once they are
+## fired. Officers who can see you within TASER_RANGE fire a taser: hit, you
+## go down for a few seconds, and one who reaches you then cuffs you. Your
+## health (Walker) takes the taser's darts and anything that runs you over; at
+## 0 you are WASTED: a hospital bill, the pistol gone, back on your feet at
+## the start.
 
 signal announce(title: String, sub: String)
 
@@ -29,6 +37,15 @@ const ARREST := 1.3             # metres: within this for ARREST_TIME, you are t
 const ARREST_TIME := 0.8
 const FINE := 100
 const COPS_PER_CAR := 2
+const PICKUPS := 3              # pistols lying about near you at once
+const PICKUP_ROUNDS := 10       # in a pistol picked up off the street
+const PICKUP_FROM := Vector2(25.0, 140.0)   # how far from you they lie
+const ORANGE := Color(1.0, 0.55, 0.1)
+const TASER_RANGE := 9.0        # metres: an officer who sees you this close fires
+const TASER_GAP := 3.5          # seconds between one officer's shots
+const TASER_HURT := 20.0
+const TASER_DOWN := 3.0         # seconds on the ground
+const HOSPITAL := 150           # € when you are wasted
 
 var streamer
 var traffic
@@ -53,6 +70,7 @@ var _dispatch := 0.0
 var _arrest := 0.0
 var _marker: Node3D
 var _fx: Node3D
+var pickups: Array = []         # {pos, node}: pistols lying in the street
 var _rng := RandomNumberGenerator.new()
 
 
@@ -168,6 +186,10 @@ func fire() -> void:
 		reload()
 		return
 	mag -= 1
+	if mag == 0 and rounds == 0:
+		armed = false                                       # the last one: the pistol is spent
+		state = "shop"
+		announce.emit("OUT OF BULLETS", "Pick up another pistol (orange on the minimap), or buy one")
 	_cool = SHOT_GAP
 	aim_t = 0.0
 	walker.heading = walker.cam_yaw                          # turn to where you aim
@@ -317,6 +339,10 @@ func _physics_process(delta: float) -> void:
 	if armed and mag == 0 and rounds > 0 and _reload <= 0.0:
 		reload()
 	_at_shop()
+	_pickups(delta)
+	if walker.health <= 0.0:
+		_wasted()
+		return
 	if _marker:
 		_marker.visible = state == "shop" or (armed and rounds < START_ROUNDS)
 		_marker.get_node("sign").position.y = 2.6 + sin(Time.get_ticks_msec() / 400.0) * 0.15
@@ -364,10 +390,22 @@ func _physics_process(delta: float) -> void:
 		var d: float = Vector2(c.pos.x, c.pos.z).distance_to(you)
 		if c.sees or seen and d < 30.0:
 			c.last = walker.global_position                  # a colleague's radio, close by
-		_run_cop(c, delta)
+		c.taser_t = float(c.get("taser_t", 1.0)) - delta
+		if c.get("aim", 0.0) > 0.0:
+			# Taser up, standing: the shot is going.
+			c.aim -= delta
+			var to: Vector3 = walker.global_position - c.pos
+			c.heading = atan2(-to.x, -to.z)
+			c.h.animate(delta, "idle", 0.0)
+			c.h.sh_r.rotation.x = 1.5; c.h.el_r.rotation.x = 0.0
+			c.h.rotation = Vector3(0, c.heading, 0)
+		else:
+			if c.sees and d < TASER_RANGE and d > ARREST and c.taser_t <= 0.0 and walker.vehicle == null and walker.stun <= 0.0:
+				_taser(c, d)
+			_run_cop(c, delta)
 		# Caught: on foot, or sitting still in a vehicle.
 		if d < ARREST and (walker.vehicle == null or absf(walker.car_speed) < 1.5):
-			_arrest += delta
+			_arrest += delta * (2.0 if walker.stun > 0.0 else 1.0)   # (down on the street: cuffed at once)
 	for v in cars:                                          # a car on your tail sees you too
 		if v.pos.distance_to(you) < 35.0:
 			seen = true
@@ -512,6 +550,116 @@ func _stand_down(_delta: float) -> void:
 	_arrest = 0.0
 
 
+# ---- pistols in the street ----------------------------------------------------------
+
+func _pickups(_delta: float) -> void:
+	var here: Vector3 = walker.global_position
+	for p in pickups.duplicate():
+		var d := _dist(p.pos)
+		if d > PICKUP_FROM.y + 120.0:                       # left far behind: lies somewhere else now
+			p.node.queue_free(); pickups.erase(p)
+			continue
+		var gun: Node3D = p.node.get_node("gun")
+		gun.rotation.y += _delta * 2.0
+		gun.position.y = 1.2 + sin(Time.get_ticks_msec() / 350.0) * 0.12
+		if d < 1.4 and walker.vehicle == null and walker.stun <= 0.0 and (not armed or mag + rounds < PICKUP_ROUNDS):
+			p.node.queue_free(); pickups.erase(p)
+			armed = true; mag = PICKUP_ROUNDS; rounds = 0; _reload = 0.0
+			state = "armed"
+			announce.emit("PISTOL", "%d rounds. Left click to shoot. Mind the police." % PICKUP_ROUNDS)
+	if pickups.size() < PICKUPS and Engine.get_physics_frames() % 30 == 0:
+		_place_pickup(here)
+
+
+func _place_pickup(from: Vector3) -> void:
+	for k in 20:
+		var a := _rng.randf() * TAU
+		var d := _rng.randf_range(PICKUP_FROM.x, PICKUP_FROM.y)
+		var p := Vector3(from.x + cos(a) * d, 0.0, from.z + sin(a) * d)
+		if streamer.water_at(p) != 0 or not walker._free(p) or not walker._free(p + Vector3(1, 0, 0)):
+			continue
+		if pickups.any(func(q): return q.pos.distance_to(p) < 30.0):
+			continue
+		var n := Node3D.new()
+		var ring_m := StandardMaterial3D.new()
+		ring_m.albedo_color = Color(ORANGE.r, ORANGE.g, ORANGE.b, 0.8)
+		ring_m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		ring_m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		var ring := TorusMesh.new(); ring.inner_radius = 0.75; ring.outer_radius = 0.9; ring.rings = 24; ring.ring_segments = 6
+		var rmi := MeshInstance3D.new(); rmi.mesh = ring; rmi.material_override = ring_m; rmi.position.y = 0.05
+		rmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		n.add_child(rmi)
+		# A pistol at two and a half times life size, so it reads from afar: grip and slide.
+		var gun := Node3D.new(); gun.name = "gun"
+		var gm := StandardMaterial3D.new(); gm.albedo_color = Color("26282c"); gm.metallic = 0.6; gm.roughness = 0.35
+		gm.emission_enabled = true; gm.emission = ORANGE; gm.emission_energy_multiplier = 0.9
+		for part in [[Vector3(0.09, 0.14, 0.42), Vector3(0, 0.08, 0)], [Vector3(0.08, 0.26, 0.12), Vector3(0, -0.08, 0.13)]]:
+			var b := BoxMesh.new(); b.size = part[0]
+			var mi := MeshInstance3D.new(); mi.mesh = b; mi.material_override = gm; mi.position = part[1]
+			gun.add_child(mi)
+		gun.scale = Vector3.ONE * 2.6
+		n.add_child(gun)
+		n.position = p
+		add_child(n)
+		pickups.append({"pos": p, "node": n})
+		return
+
+
+# ---- the taser -------------------------------------------------------------------------
+
+# An officer fires a taser at you: two yellow wires flash across, and, near
+# enough and lucky enough, you go down.
+func _taser(c: Dictionary, d: float) -> void:
+	c.taser_t = TASER_GAP
+	c.aim = 0.45
+	var hit := _rng.randf() < clampf(1.05 - d / 12.0, 0.3, 0.95)
+	var to: Vector3 = walker.global_position + Vector3(0, 1.1, 0)
+	if not hit:
+		to += Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-0.4, 0.4), _rng.randf_range(-1, 1)).normalized() * 0.9
+	var f := Vector3(-sin(c.heading), 0, -cos(c.heading))
+	var from: Vector3 = c.pos + Vector3(0, 1.35, 0) + f * 0.45
+	for side in [-0.04, 0.04]:
+		var a := from + Vector3(side, 0, 0)
+		var b := to + Vector3(side, side, 0)
+		var wire := BoxMesh.new(); wire.size = Vector3(0.012, 0.012, a.distance_to(b))
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.albedo_color = Color(1.0, 0.92, 0.2)
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		var mi := MeshInstance3D.new(); mi.mesh = wire; mi.material_override = m
+		_fx.add_child(mi)
+		mi.look_at_from_position((a + b) / 2.0, b, Vector3.UP)
+		_fade(mi, m, 0.6)
+	if hit:
+		walker.hurt(TASER_HURT)
+		var away: Vector3 = walker.global_position - c.pos; away.y = 0.0
+		walker.knock_down(away.normalized() * 1.2 + Vector3.UP * 0.3, TASER_DOWN)
+		announce.emit("TASERED", "")
+
+
+# Health gone: the hospital, the bill, and back on your feet at the start.
+func _wasted() -> void:
+	var bill: int = mini(HOSPITAL, mission.money)
+	mission.money -= bill
+	armed = false; mag = 0; rounds = 0
+	stars = 0
+	_arrest = 0.0
+	state = "shop"
+	if walker.vehicle != null:
+		walker._get_out()
+	walker.get_up()
+	for c in cops:
+		_free_cop(c)
+	cops.clear()
+	for v in cars:
+		if traffic.vehicles.has(v):
+			traffic._despawn(v)
+	cars.clear()
+	walker.health = walker.MAX_HEALTH
+	walker.global_position = streamer.start_point()
+	announce.emit("WASTED", "The hospital bill: €%d. The pistol is gone." % bill)
+
+
 func _busted() -> void:
 	var fine: int = mini(FINE, mission.money)
 	mission.money -= fine
@@ -528,4 +676,5 @@ func _busted() -> void:
 		if traffic.vehicles.has(v):
 			traffic._despawn(v)
 	cars.clear()
+	walker.get_up()
 	announce.emit("BUSTED", "Fined €%d. The police took your pistol." % fine)

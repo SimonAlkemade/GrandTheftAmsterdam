@@ -116,6 +116,26 @@ they give up. `tests/crime_test.gd` plays it through on a grid of test streets:
 
     godot --headless --path godot-city --script tests/crime_test.gd
 
+Pistols also lie about in the street, three at a time 25 to 140 m from you:
+an orange pistol turning over an orange ring, orange dots on the minimap. Walk
+over one and it is yours with **10 rounds** in it; once they are fired the
+pistol is spent ("OUT OF BULLETS") and you need another (or the shop's).
+
+You have **health**, the bar beside the stars (green, red and flashing when
+low; what was just taken shows white for a moment). It comes back by itself
+after 6 seconds without harm. Officers carry **tasers**: one who can see you
+within 9 m fires (two yellow wires flash across; the closer, the surer the
+hit). Hit, you lose 20 health and go down limp for 3 seconds, the screen
+flickering blue, and an officer who reaches you then cuffs you at once:
+BUSTED. A car, bus, tram or bike that runs into you at more than about
+15 km/h knocks you down too, and hurts, the faster the worse. At 0 health you
+are **WASTED**: a €150 hospital bill, the pistol gone, the police gone, and
+you are back on your feet at the start. `tests/taser_test.gd` checks the
+pickup and its ten rounds, the taser, the arrest, being run over and being
+wasted:
+
+    godot --headless --path godot-city --script tests/taser_test.gd
+
 ## Mission 3: tulips for the tourists
 
 After the fifth parcel, the yellow circle leads to the Bloemenmarkt, the

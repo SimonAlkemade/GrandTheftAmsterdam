@@ -1,7 +1,9 @@
 extends Control
 ## Mission 2 on screen: the wanted level as five stars at the top left (white
 ## and lit while the police are after you, flashing while they cannot see you),
-## and a crosshair in the middle while you hold the pistol.
+## and a crosshair in the middle while you hold the pistol; your health as a
+## bar beside the stars (green, red when low, flashing as it is taken); the
+## screen flickering blue while a taser has you down.
 
 const STAR := 15.0              # outer radius, px
 const GAP := 38.0
@@ -27,8 +29,34 @@ func _star(c: Vector2, r: float) -> PackedVector2Array:
 	return pts
 
 
+var _shown := 100.0             # the health the bar shows, catching up with the real one
+
+
+func _health_bar() -> void:
+	var h: float = walker.health / walker.MAX_HEALTH
+	_shown = lerpf(_shown, walker.health, 0.08) if absf(_shown - walker.health) > 0.5 else walker.health
+	var r := Rect2(Vector2(32 + 4 * GAP + STAR + 38, 22), Vector2(170, 16))   # right of the stars, a cross before it
+	draw_rect(r.grow(3.0), Color(0, 0, 0, 0.75))
+	draw_rect(r, Color(0.25, 0.08, 0.08, 0.9))
+	var lost := r; lost.size.x *= _shown / walker.MAX_HEALTH
+	draw_rect(lost, Color(1, 1, 1, 0.85))                     # what was just taken, fading
+	var left := r; left.size.x *= h
+	var low := h < 0.3 and fmod(Time.get_ticks_msec() / 1000.0, 0.5) < 0.25
+	draw_rect(left, Color(0.9, 0.15, 0.15) if h < 0.3 and not low else (Color(0.95, 0.45, 0.45) if low else Color(0.25, 0.8, 0.3)))
+	# a cross, for health
+	var c := r.position + Vector2(-14, r.size.y / 2.0)
+	draw_rect(Rect2(c - Vector2(6, 2), Vector2(12, 4)), Color.WHITE)
+	draw_rect(Rect2(c - Vector2(2, 6), Vector2(4, 12)), Color.WHITE)
+
+
 func _draw() -> void:
-	if crime == null or crime.state == "off" or walker == null or not walker.active:
+	if walker == null or not walker.active:
+		return
+	if walker.stun > 0.0:                    # tasered or run over: the world flickers
+		var a := 0.12 + 0.1 * sin(Time.get_ticks_msec() / 40.0)
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0.6, 0.8, 1.0, a))
+	_health_bar()
+	if crime == null or crime.state == "off":
 		return
 	var blink: bool = not crime.seen and fmod(Time.get_ticks_msec() / 1000.0, 0.6) < 0.3
 	for k in 5:

@@ -18,13 +18,18 @@ var _moved := []                # [mesh, its parent on the figure, its transform
 var _human: Node3D
 var _still := 0.0
 var age := 0.0
+var _mask := MASK
 
 
 ## Sends `h` flying with velocity `vel` (m/s), spinning a little; returns the
-## ragdoll, a node beside it in the scene.
-static func knock(h: Node3D, vel: Vector3, spin := 1.0) -> Node3D:
+## ragdoll, a node beside it in the scene (placed in the world, so it stays
+## where it falls whatever its parent does). `you`: the figure is yours, and
+## the limbs do not knock against your own body.
+static func knock(h: Node3D, vel: Vector3, spin := 1.0, you := false) -> Node3D:
 	var r: Node3D = load("res://scripts/ragdoll.gd").new()
+	r.top_level = true
 	h.get_parent().add_child(r)
+	r._mask = MASK & ~16 if you else MASK
 	r._build(h, vel, spin)
 	return r
 
@@ -83,7 +88,7 @@ func _build(h: Node3D, vel: Vector3, spin: float) -> void:
 		var j: Node3D = s[0]
 		var b := RigidBody3D.new()
 		b.collision_layer = LAYER
-		b.collision_mask = MASK
+		b.collision_mask = _mask
 		b.mass = s[3]
 		b.linear_damp = 0.05
 		b.angular_damp = 1.5
