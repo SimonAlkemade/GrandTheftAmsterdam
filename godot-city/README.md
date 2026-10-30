@@ -135,6 +135,43 @@ they give up. `tests/crime_test.gd` plays it through on a grid of test streets:
 
     godot --headless --path godot-city --script tests/crime_test.gd
 
+### How the pistol feels
+
+The design is `docs/juicy-gunfights.md` (at the repository root); this is its
+first slice, the pistol as its "modern handgun" played in third person:
+
+- **Sound**, made in code at startup (`scripts/sfx.gd`; no sound files): a
+  shot is five layers at once, a crack, the bang, the slide's tick-clack, a
+  sub thump only you hear, and a tail that depends on where you stand, a soft
+  roll on an open square, a slap-back echo in a narrow street. Every sound
+  comes in three versions played in turn (never one of the last two again)
+  with a little pitch and volume jitter. Bullets landing on stone, metal,
+  water or a person each have their own, and you hear the brass case tinkle
+  when it lands; empty, the pistol only clicks.
+- **At the gun** (`scripts/gun_fx.gd`): for one frame a flash of crossed
+  cards (a star and two petals along the barrel) and a warm light, three
+  smoke wisps, a brass case flicked out to the right that bounces on the
+  stones; your arm kicks up and the wrist flips on a snappy spring, the camera
+  a little (a tenth of that stays: pull the aim down again).
+- **Where it lands**, one frame later: on stone, chips and a dust puff and a
+  crater mark (and now and then a ricochet's whine); on a car or a boat,
+  sparks, a blip of light and a bright hole; on canal water, a splash column
+  and a ring; on a person, blood mist and drops, a splash on the wall behind,
+  a hit tick, and they freeze for three frames before going limp. At most 64
+  marks: the oldest go.
+- **The camera** (`scripts/juice.gd`): one budget everything adds to, capped,
+  so nothing is overdone. The pistol only bumps the exposure for a frame; the
+  shake (rotation only, trauma squared) is kept for being tasered or run
+  over. In the map panel: **Shake** (0 is none; `--shake=0` too), **Fewer
+  flashes**, and **Hit marker** (the four ticks round the crosshair; the hit
+  sound stays either way).
+
+`tests/gunfx_test.gd` checks the sounds and their round-robin, a shot's
+layers and its one-frame flash and light, the springs coming back, each
+surface's answer, the budget's caps and that shake 0 is no shake:
+
+    godot --headless --path godot-city --script tests/gunfx_test.gd
+
 Pistols also lie about in the street, three at a time 25 to 140 m from you:
 an orange pistol turning over an orange ring, orange dots on the minimap. Walk
 over one and it is yours with **10 rounds** in it; once they are fired the
@@ -402,6 +439,8 @@ another size: `python chunk_godot_tiles.py godot-city/data 375`.
 - `scripts/walker.gd`, `scripts/human.gd`: the player and pedestrians
 - `scripts/ragdoll.gd`: a person knocked over, gone limp
 - `scripts/weather.gd`: the clock, sunshine, clouds and rain, wet streets
+- `scripts/sfx.gd`, `scripts/gun_fx.gd`, `scripts/juice.gd`: the sounds (made in code), the pistol's
+  feel at the gun and where it lands, and the camera's shake and punch (`docs/juicy-gunfights.md`)
 - `scripts/bike_rig.gd`: a ridden bike: wheels, crank, and the rider's legs and arms on pedals and grips
 - `scripts/boat.gd`, `scripts/boats.gd`: the floating boats and where they are moored
 - `models/canta.glb`: the Canta, modelled by `blender/make_canta.py`

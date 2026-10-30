@@ -46,6 +46,7 @@ const TASER_GAP := 3.5          # seconds between one officer's shots
 const TASER_HURT := 20.0
 const TASER_DOWN := 3.0         # seconds on the ground
 const HOSPITAL := 150           # € when you are wasted
+const HITSTOP := 0.05           # seconds someone hit freezes before going limp (3 frames)
 
 var streamer
 var traffic
@@ -71,6 +72,8 @@ var _arrest := 0.0
 var _marker: Node3D
 var _fx: Node3D
 var pickups: Array = []         # {pos, node}: pistols lying in the street
+var gun_fx                      # how a shot looks, sounds and feels (GunFx; optional)
+var sfx                         # the sounds (Sfx; optional)
 var _rng := RandomNumberGenerator.new()
 
 
@@ -183,6 +186,7 @@ func fire() -> void:
 	if not armed or _cool > 0.0 or _reload > 0.0:
 		return
 	if mag == 0:
+		if sfx: sfx.play("dry", null, "PlayerWeapon")
 		reload()
 		return
 	mag -= 1
@@ -196,7 +200,8 @@ func fire() -> void:
 	var cam: Camera3D = walker.cam
 	var from := cam.global_position
 	var dir := -cam.global_transform.basis.z
-	var muzzle: Vector3 = walker.global_position + Vector3(0, 1.4, 0) + Vector3(-sin(walker.heading), 0, -cos(walker.heading)) * 0.6
+	var right := Vector3(cos(walker.cam_yaw), 0, -sin(walker.cam_yaw))
+	var muzzle: Vector3 = walker.global_position + Vector3(0, 1.38, 0) + right * 0.22 + dir * 0.62   # (the right hand, held out)
 	# What the bullet meets first: a wall, the street, a vehicle, or a person.
 	var q := PhysicsRayQueryParameters3D.create(from, from + dir * RANGE, 1 | 2 | 4 | 8)
 	q.exclude = [walker.get_rid()]
@@ -218,22 +223,35 @@ func fire() -> void:
 			t_best = t; victim = ["cop", c]
 	var at := from + dir * t_best
 	_tracer(muzzle, at)
-	_flash(muzzle)
+	if gun_fx:
+		gun_fx.fire(muzzle, dir, right)
+		if victim != null:
+			gun_fx.impact(at, -dir, dir, "flesh")
+		elif not hit.is_empty():
+			gun_fx.impact(at, hit.normal, dir, gun_fx.surface_of(hit, at))
+	else:
+		_flash(muzzle)
 	if victim == null and not hit.is_empty():
-		_puff(at)
+		if not gun_fx: _puff(at)
 		if hit.collider is RigidBody3D:                     # a real vehicle takes the knock
 			(hit.collider as RigidBody3D).apply_impulse(dir * 400.0, at - (hit.collider as RigidBody3D).global_position)
 	# Every shot is a crime; who it hits decides how bad.
 	stars = maxi(stars, 1)
 	if victim != null:
 		var shove := Vector3(dir.x, 0, dir.z).normalized() * 3.0 + Vector3.UP * 0.8   # the bullet's knock
+		# Hitstop: they freeze for HITSTOP, then go limp (only they: §5.2).
+		var who: Dictionary = victim[1]
+		var stop: float = HITSTOP if gun_fx else 0.0
+		who.hitstop = stop
 		if victim[0] == "ped":
-			_down_ped(victim[1])
-			walker.knock(victim[1], shove)
+			_down_ped(who)
+			if gun_fx: gun_fx.later(stop, func(): if walker.peds.has(who): walker.knock(who, shove))
+			else: walker.knock(who, shove)
 			stars = maxi(stars, 2)
 		else:
-			victim[1].down = true
-			victim[1].rag = Ragdoll.knock(victim[1].h, shove)
+			who.down = true
+			if gun_fx: gun_fx.later(stop, func(): if cops.has(who) and not who.has("rag"): who.rag = Ragdoll.knock(who.h, shove))
+			else: who.rag = Ragdoll.knock(who.h, shove)
 			stars = clampi(maxi(stars + 1, 3), 1, 5)
 	unseen = 0.0                                            # they know where it came from
 	last_seen = walker.global_position
@@ -376,7 +394,10 @@ func _physics_process(delta: float) -> void:
 	var head: Vector3 = walker.global_position + Vector3(0, 1.5, 0)
 	for c in cops:
 		if c.down:
-			_lie(c)
+			if c.get("hitstop", 0.0) > 0.0:
+				c.hitstop -= delta                         # frozen where the bullet caught them
+			else:
+				_lie(c)
 			continue
 		var d: float = Vector2(c.pos.x, c.pos.z).distance_to(you)
 		c.sees = d < COP_SEES and _sees(c.pos + Vector3(0, 1.6, 0), head)
@@ -613,6 +634,7 @@ func _taser(c: Dictionary, d: float) -> void:
 	c.taser_t = TASER_GAP
 	c.aim = 0.45
 	var hit := _rng.randf() < clampf(1.05 - d / 12.0, 0.3, 0.95)
+	if sfx: sfx.play("taser", c.pos + Vector3(0, 1.3, 0))
 	var to: Vector3 = walker.global_position + Vector3(0, 1.1, 0)
 	if not hit:
 		to += Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-0.4, 0.4), _rng.randf_range(-1, 1)).normalized() * 0.9

@@ -61,6 +61,9 @@ var health := MAX_HEALTH
 var stun := 0.0                 # seconds left lying on the ground (tasered, run over)
 var _since_hurt := 99.0
 var _rag = null                 # your own ragdoll while you are down
+var juice                       # the shake and punch of the camera (Juice; optional)
+var gun_fx                      # the pistol's recoil (GunFx; optional)
+var _fov := 68.0                # the field of view before any punch
 var _bouquet: Node3D
 var _parcel: MeshInstance3D
 var _rng := RandomNumberGenerator.new()
@@ -318,6 +321,10 @@ func _physics_process(delta: float) -> void:
 		heading = lerp_angle(heading, cam_yaw, minf(1.0, delta * 16.0))
 		body.rotation.y = heading
 		body.sh_r.rotation.x = 1.5; body.el_r.rotation.x = 0.05; body.sh_r.rotation.z = -0.05
+		if gun_fx:                       # the recoil: the arm kicks up and the wrist flips (§6.9)
+			body.sh_r.rotation.x += gun_fx.arm
+			body.el_r.rotation.x += gun_fx.arm * 0.6
+			body.sh_r.rotation.z -= gun_fx.arm * 0.25
 	_peds(delta)
 	_camera(delta)
 
@@ -364,8 +371,16 @@ func _camera(delta: float) -> void:
 	want.y = maxf(want.y, WATER_Y + 0.5 if afloat else 0.3)
 	cam.global_position = cam.global_position.lerp(want, 1.0 - exp(-delta * 14.0))
 	var fast: bool = state == "run" or (vehicle != null and absf(car_speed) > 11.0)
-	cam.fov = lerpf(cam.fov, 74.0 if fast else 68.0, 1.0 - exp(-delta * 4.0))
+	_fov = lerpf(_fov, 74.0 if fast else 68.0, 1.0 - exp(-delta * 4.0))
+	cam.fov = _fov + (juice.fov if juice else 0.0)
 	cam.look_at(head - Vector3(0, 0.2, 0), Vector3.UP)
+	# The recoil's camera kick, and the shake (rotation only, §2.3).
+	var kick: float = gun_fx.cam if gun_fx else 0.0
+	var sh: Vector3 = juice.shake if juice else Vector3.ZERO
+	if kick != 0.0 or sh != Vector3.ZERO:
+		cam.rotate_object_local(Vector3.RIGHT, kick + sh.x)
+		cam.rotate_object_local(Vector3.UP, sh.y)
+		cam.rotate_object_local(Vector3(0, 0, 1), sh.z)
 
 
 # ---- vehicles ----------------------------------------------------------------------
@@ -771,6 +786,8 @@ func knock_down(vel: Vector3, secs: float) -> void:
 		return
 	stun = maxf(stun, secs)
 	speed = 0.0; vy = 0.0
+	if juice:
+		juice.add(clampf(0.25 + vel.length() * 0.04, 0.3, 0.8), 0.0, 0.0, 12.0)   # you, hurt: the camera feels it (§2.2)
 	if _rag == null:
 		_rag = Ragdoll.knock(body, vel, clampf(vel.length() / 6.0, 0.3, 2.0), true)
 
@@ -814,6 +831,9 @@ func _peds(delta: float) -> void:
 	if vehicle == null and _rag == null:
 		_hit_by_traffic(cars)
 	for p in peds:
+		if p.get("hitstop", 0.0) > 0.0:
+			p.hitstop -= delta                    # shot: frozen a moment before they go (§5.2)
+			continue
 		if p.has("rag"):
 			_lying(p, delta)
 			continue
@@ -995,8 +1015,8 @@ func _peds(delta: float) -> void:
 				var to := c + n3 * keep
 				a.pos = Vector3(to.x, a.pos.y, to.y)
 	for p in peds:
-		if p.has("rag"):
-			continue                                # the ragdoll has them
+		if p.has("rag") or p.get("hitstop", 0.0) > 0.0:
+			continue                                # the ragdoll has them (or the hitstop holds them)
 		var gy = _ground(p.pos)
 		var y: float = gy if gy != null else 0.0
 		if p.get("dead", false):                   # on their back

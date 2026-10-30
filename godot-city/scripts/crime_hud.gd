@@ -10,6 +10,7 @@ const GAP := 38.0
 
 var crime
 var walker
+var juice
 
 
 func _ready() -> void:
@@ -70,3 +71,7 @@ func _draw() -> void:
 			draw_line(m + d * 5.0, m + d * 13.0, Color(0, 0, 0, 0.7), 4.0)
 			draw_line(m + d * 5.0, m + d * 13.0, Color(1, 1, 1, 0.95), 2.0)
 		draw_circle(m, 1.6, Color(1, 1, 1, 0.95))
+		if juice and juice.hitmarker_visual and juice.hit_t > 0.0:     # a hit: four short ticks round the middle
+			for d in [Vector2(1, 1), Vector2(-1, 1), Vector2(1, -1), Vector2(-1, -1)]:
+				draw_line(m + d * 7.0, m + d * 14.0, Color(0, 0, 0, 0.7), 4.0)
+				draw_line(m + d * 7.0, m + d * 14.0, Color(1, 1, 1), 2.0)

@@ -7,6 +7,7 @@ extends Node3D
 ##   Map:     drag to pan, right-drag to rotate, wheel/pinch to zoom.
 ## Test arguments (after `--`): --shot=out.png --view=map|tram|walk --hour=17
 ##   --weather=sun|clouds|rain --clock=0 (the clock stopped; it is with --shot)
+##   --shake=0..1 (camera shake, as the map panel's slider)
 ##   --wait=12 --run (walk mode: hold W and Shift, then turn, to test running)
 ##   --vehicle=car|canta|bike|rack|bus|tram|busdrive|tramdrive|boat|swim|damrak (get in, drive, get out)
 
@@ -20,6 +21,9 @@ const Minimap := preload("res://scripts/minimap.gd")
 const Mission := preload("res://scripts/mission.gd")
 const Boats := preload("res://scripts/boats.gd")
 const Weather := preload("res://scripts/weather.gd")
+const Sfx := preload("res://scripts/sfx.gd")
+const Juice := preload("res://scripts/juice.gd")
+const GunFx := preload("res://scripts/gun_fx.gd")
 const Crime := preload("res://scripts/crime.gd")
 const CrimeHud := preload("res://scripts/crime_hud.gd")
 
@@ -28,6 +32,9 @@ var streamer
 var traffic
 var boats
 var crime
+var sfx
+var juice
+var gun_fx
 var cam: Camera3D
 var walker
 var mission
@@ -109,6 +116,17 @@ func _ready() -> void:
 	add_child(crime)
 	crime.setup(streamer, traffic, walker, mission)
 	walker.crime = crime
+	# How a gunfight feels (docs/juicy-gunfights.md): sounds, the global juice, the pistol's FX.
+	sfx = Sfx.new()
+	add_child(sfx)
+	juice = Juice.new()
+	add_child(juice)
+	juice.shake_scale = clampf(float(args.get("shake", "1")), 0.0, 1.0)
+	gun_fx = GunFx.new()
+	add_child(gun_fx)
+	gun_fx.setup(walker, streamer, sfx, juice)
+	crime.gun_fx = gun_fx; crime.sfx = sfx
+	walker.juice = juice; walker.gun_fx = gun_fx
 
 	_ui()
 	_set_hour(hour)
@@ -309,6 +327,26 @@ func _ui() -> void:
 		wb.focus_mode = Control.FOCUS_NONE
 		wb.pressed.connect(weather.set_mode.bind(wk[0]))
 		wrow.add_child(wb)
+	# Accessibility (docs/juicy-gunfights.md §10.1): shake, flashes, the hit marker.
+	var srow := HBoxContainer.new()
+	box.add_child(srow)
+	var sl := Label.new(); sl.text = "Shake"; sl.custom_minimum_size.x = 52
+	srow.add_child(sl)
+	var shake := HSlider.new()
+	shake.min_value = 0.0; shake.max_value = 1.0; shake.step = 0.05; shake.value = juice.shake_scale
+	shake.custom_minimum_size.x = 190
+	shake.focus_mode = Control.FOCUS_NONE
+	shake.value_changed.connect(func(v): juice.shake_scale = v)
+	srow.add_child(shake)
+	var arow := HBoxContainer.new()
+	box.add_child(arow)
+	for opt in [["Fewer flashes", "reduce_flashes", false], ["Hit marker", "hitmarker_visual", true]]:
+		var cb := CheckBox.new()
+		cb.text = opt[0]
+		cb.button_pressed = opt[2]
+		cb.focus_mode = Control.FOCUS_NONE
+		cb.toggled.connect(func(on): juice.set(opt[1], on))
+		arow.add_child(cb)
 
 	var grid := GridContainer.new()
 	grid.columns = 2
@@ -484,7 +522,7 @@ func _mission_hud(layer: CanvasLayer) -> void:
 	layer.add_child(line)
 	ui.crime_text = line
 	var hud := CrimeHud.new()
-	hud.crime = crime; hud.walker = walker
+	hud.crime = crime; hud.walker = walker; hud.juice = juice
 	layer.add_child(hud)
 
 
@@ -605,6 +643,7 @@ func _process(delta: float) -> void:
 		if _sky_t <= 0.0:
 			_sky_t = 0.25                       # (the light follows four times a second)
 			_set_hour(hour)
+	env.tonemap_exposure = 0.92 * pow(2.0, juice.ev) if juice else 0.92   # (a shot's one-frame bump)
 	if ui.has("clock"):
 		ui.clock.text = "%02d:%02d  ·  %s" % [int(hour), int(fmod(hour, 1.0) * 60), weather.label()]
 	if _pending_walk and streamer.failed > 0:
