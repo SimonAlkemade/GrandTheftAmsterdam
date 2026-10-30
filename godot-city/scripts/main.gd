@@ -6,6 +6,7 @@ extends Node3D
 ##   Driving: W drives, S brakes and reverses, Space is the handbrake.
 ##   Map:     drag to pan, right-drag to rotate, wheel/pinch to zoom.
 ## Test arguments (after `--`): --shot=out.png --view=map|tram|walk --hour=17
+##   --weather=sun|clouds|rain --clock=0 (the clock stopped; it is with --shot)
 ##   --wait=12 --run (walk mode: hold W and Shift, then turn, to test running)
 ##   --vehicle=car|canta|bike|rack|bus|tram|busdrive|tramdrive|boat|swim|damrak (get in, drive, get out)
 
@@ -18,6 +19,7 @@ const Models := preload("res://scripts/vehicle_models.gd")
 const Minimap := preload("res://scripts/minimap.gd")
 const Mission := preload("res://scripts/mission.gd")
 const Boats := preload("res://scripts/boats.gd")
+const Weather := preload("res://scripts/weather.gd")
 const Crime := preload("res://scripts/crime.gd")
 const CrimeHud := preload("res://scripts/crime_hud.gd")
 
@@ -33,6 +35,9 @@ var sun: DirectionalLight3D
 var env: Environment
 var sky_mat: ProceduralSkyMaterial
 var hour := 15.5
+var weather
+var clock_on := true            # the clock runs (Weather.CLOCK s a game hour)
+var _sky_t := 0.0
 var mode := "map"
 var ui := {}
 var args := {}
@@ -66,6 +71,13 @@ func _ready() -> void:
 	_screen_scale()
 	mats = Materials.new()
 	mats.build()
+	weather = Weather.new()
+	add_child(weather)
+	weather.setup(mats)
+	if args.has("weather"):
+		weather.set_mode(args.weather)
+		weather.set_now(args.weather)
+	clock_on = args.get("clock", "0" if args.has("shot") else "1") != "0"
 	streamer = Streamer.new()
 	add_child(streamer)
 	streamer.setup(mats)
@@ -127,6 +139,20 @@ func _world() -> void:
 	var sky := Sky.new()
 	sky_mat = ProceduralSkyMaterial.new()
 	sky.sky_material = sky_mat
+	# Clouds: soft noise over the sky, thin on a fine day, a lid in the rain.
+	var noise := FastNoiseLite.new()
+	noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	noise.frequency = 0.006
+	noise.fractal_octaves = 5
+	var cover := NoiseTexture2D.new()
+	cover.width = 1024; cover.height = 512
+	cover.seamless = true
+	cover.noise = noise
+	var ramp := Gradient.new()
+	ramp.set_color(0, Color(1, 1, 1, 0)); ramp.set_color(1, Color(1, 1, 1, 1))
+	ramp.set_offset(0, 0.42); ramp.set_offset(1, 0.78)
+	cover.color_ramp = ramp
+	sky_mat.sky_cover = cover
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.ambient_light_energy = 0.9
@@ -158,10 +184,17 @@ const MAP_FOG := [1400.0, 3600.0]
 
 func _view(m: String) -> void:
 	var walk := m == "walk"
-	env.fog_depth_begin = WALK_FOG[0] if walk else MAP_FOG[0]
-	env.fog_depth_end = WALK_FOG[1] if walk else MAP_FOG[1]
+	_fog()
 	sun.directional_shadow_max_distance = 160.0 if walk else 600.0
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS if walk else DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+
+
+# The fog closes in with rain (on foot: from 300 m to 70 m off).
+func _fog() -> void:
+	var f: Array = WALK_FOG if mode == "walk" else MAP_FOG
+	var r: float = weather.rain if weather else 0.0
+	env.fog_depth_begin = lerpf(f[0], f[0] * 0.23, r)
+	env.fog_depth_end = lerpf(f[1], f[1] * 0.5, r)
 
 
 # On a high-density (Retina) screen the browser has two or three times the
@@ -186,6 +219,9 @@ func _set_hour(h: float) -> void:
 		night = 1.0
 	var azim := deg_to_rad(lerpf(100.0, 260.0, day))       # east -> south -> west
 	var warm := clampf(1.0 - sin(day * PI) * 2.2, 0.0, 1.0)
+	var cloud: float = weather.cloud if weather else 0.0
+	var rain: float = weather.rain if weather else 0.0
+	warm *= 1.0 - cloud * 0.8                # (no red sunset through cloud)
 	if night > 0.5:                     # moonlight: dim, cool, from high in the south
 		sun.rotation = Vector3(deg_to_rad(-40), deg_to_rad(200), 0)
 		sun.light_color = Color(0.62, 0.72, 1.0)
@@ -194,20 +230,27 @@ func _set_hour(h: float) -> void:
 		sun.rotation = Vector3(-maxf(elev, deg_to_rad(4)), PI - azim, 0)
 		sun.light_color = Color(1.0, 0.96, 0.9).lerp(Color(1.0, 0.62, 0.38), warm)
 		sun.light_energy = lerpf(1.1, 0.2, night * 2.0)
-	sky_mat.sky_top_color = Color("3d6fae").lerp(Color("0b1224"), night)
-	sky_mat.sky_horizon_color = Color("a9bfd6").lerp(Color("e8a070"), warm * (1.0 - night)).lerp(Color("2a3046"), night)
+	sun.light_energy *= 1.0 - 0.72 * cloud      # behind the clouds: flat light...
+	sun.shadow_opacity = 1.0 - 0.7 * cloud      # ...and soft shadows
+	sky_mat.sky_top_color = Color("3d6fae").lerp(Color("737b84"), cloud * 0.9).lerp(Color("4a5058"), rain * 0.8).lerp(Color("0b1224"), night)
+	sky_mat.sky_horizon_color = Color("a9bfd6").lerp(Color("e8a070"), warm * (1.0 - night)).lerp(Color("a3a8ad"), cloud * 0.85) \
+		.lerp(Color("6f757b"), rain * 0.8).lerp(Color("2a3046"), night)
+	sun.light_energy *= 1.0 - 0.5 * rain        # (a dark day in the rain)
+	sky_mat.sky_cover_modulate = Color(0.92, 0.93, 0.95, 0.15 + cloud * 0.85).lerp(Color(0.12, 0.13, 0.17, 0.15 + cloud * 0.85), night)
 	sky_mat.ground_horizon_color = sky_mat.sky_horizon_color
 	sky_mat.ground_bottom_color = Color("40464c").lerp(Color("0c0e14"), night)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.ambient_light_sky_contribution = 1.0 - night * 0.6
 	env.ambient_light_color = Color("3a4766")
-	env.ambient_light_energy = lerpf(0.6, 0.9, night)
+	env.ambient_light_energy = lerpf(0.6, 0.9, night) + cloud * 0.25 - rain * 0.2   # (the whole sky lights it instead)
 	env.fog_light_color = sky_mat.sky_horizon_color
 	env.glow_intensity = lerpf(0.4, 1.0, night)
 	mats.set_night(night)
 	Models.set_night(night)
+	_fog()
 	if ui.has("hour"):
 		ui.hour_label.text = "%02d:%02d" % [int(h), int(fmod(h, 1.0) * 60)]
+		ui.hour.set_value_no_signal(h)
 
 
 # ---- UI ---------------------------------------------------------------------------
@@ -254,6 +297,18 @@ func _ui() -> void:
 	slider.value_changed.connect(_set_hour)
 	hrow.add_child(slider)
 	ui.hour = slider
+	var wrow := HBoxContainer.new()            # the weather: changing by itself, or held
+	box.add_child(wrow)
+	var wgroup := ButtonGroup.new()
+	for wk in [["auto", "Auto"], ["sun", "Sun"], ["clouds", "Clouds"], ["rain", "Rain"]]:
+		var wb := Button.new()
+		wb.text = wk[1]
+		wb.toggle_mode = true
+		wb.button_group = wgroup
+		wb.button_pressed = wk[0] == weather.mode
+		wb.focus_mode = Control.FOCUS_NONE
+		wb.pressed.connect(weather.set_mode.bind(wk[0]))
+		wrow.add_child(wb)
 
 	var grid := GridContainer.new()
 	grid.columns = 2
@@ -294,6 +349,15 @@ func _ui() -> void:
 	area.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	layer.add_child(area)
 	ui.area = area
+	var clock := Label.new()                 # the time and the weather, over the street name
+	clock.add_theme_font_size_override("font_size", 18)
+	clock.add_theme_color_override("font_outline_color", Color.BLACK)
+	clock.add_theme_constant_override("outline_size", 5)
+	clock.anchor_left = 1.0; clock.anchor_right = 1.0; clock.anchor_top = 1.0; clock.anchor_bottom = 1.0
+	clock.offset_left = -520; clock.offset_right = -24; clock.offset_top = -92; clock.offset_bottom = -64
+	clock.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	layer.add_child(clock)
+	ui.clock = clock
 	_help()
 
 
@@ -532,6 +596,17 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _process(delta: float) -> void:
+	# The clock and the weather.
+	var hours := delta / Weather.CLOCK if clock_on else 0.0
+	weather.tick(delta, hours, cam.global_position if mode == "map" else walker.cam.global_position)
+	_sky_t -= delta
+	if hours > 0.0 or _sky_t <= 0.0:
+		hour = fmod(hour + hours, 24.0)
+		if _sky_t <= 0.0:
+			_sky_t = 0.25                       # (the light follows four times a second)
+			_set_hour(hour)
+	if ui.has("clock"):
+		ui.clock.text = "%02d:%02d  ·  %s" % [int(hour), int(fmod(hour, 1.0) * 60), weather.label()]
 	if _pending_walk and streamer.failed > 0:
 		ui.loading.text = "Could not load the city's map tiles.\nReload the page; if it keeps happening, the browser console says which file failed."
 	if _pending_walk and not streamer.tile_at(_walk_at).is_empty():

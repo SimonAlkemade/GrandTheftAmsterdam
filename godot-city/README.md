@@ -34,8 +34,27 @@ macOS, Windows and Linux.
 | M | drop down and walk where the camera is looking |
 | "Ride a tram" | follow the nearest tram |
 
-The slider sets the time of day; at night the windows, street lamps,
-headlights and the tram and bus destination signs light up. Fall into a
+The clock runs: a game hour passes in a minute, a whole day and night in 24
+minutes (the slider in the map panel sets the time; the time and the weather
+show over the street name). The sun rises in the east and sets red in the
+west, and at night the windows, street lamps, headlights and the tram and bus
+destination signs light up.
+
+The weather changes by itself every two to six game hours, between sunshine
+(about half the time), clouds and rain (a quarter of the time, this being
+Amsterdam), and blends from one into the next over a minute or so. Clouds
+cover the sky, dim the sun and soften the shadows; in the rain the sky goes
+dark grey, the fog closes in (from 300 m to 70 m off on foot), rain streaks
+down round you, and the streets get wet: darker and glossy, mirroring the
+street lamps at night, and drying slowly once it stops. The Auto, Sun, Clouds
+and Rain buttons in the map panel hold a weather (`--weather=rain` starts in
+it). `tests/weather_test.gd` checks the rain coming on and the streets
+getting wet, the sun drying them back to just as they were, and the weather
+changing by itself:
+
+    godot --headless --path godot-city --script tests/weather_test.gd
+
+Fall into a
 canal and you swim (Shift for a faster crawl); swim to a quay to climb out,
 or up to a boat and press E to climb aboard.
 
@@ -382,6 +401,7 @@ another size: `python chunk_godot_tiles.py godot-city/data 375`.
 - `scripts/vehicle_physics.gd`: suspension, engine, brakes and steering for what you drive
 - `scripts/walker.gd`, `scripts/human.gd`: the player and pedestrians
 - `scripts/ragdoll.gd`: a person knocked over, gone limp
+- `scripts/weather.gd`: the clock, sunshine, clouds and rain, wet streets
 - `scripts/bike_rig.gd`: a ridden bike: wheels, crank, and the rider's legs and arms on pedals and grips
 - `scripts/boat.gd`, `scripts/boats.gd`: the floating boats and where they are moored
 - `models/canta.glb`: the Canta, modelled by `blender/make_canta.py`
