@@ -16,7 +16,11 @@ extends Node3D
 ## and if you set it off it is a crime.
 ## Also kept here: the burning cars (shot until their tank goes) and the red
 ## gas canisters standing outside cafes.
+## Fire: a Molotov breaking, a burning pool, a burning patch, is a zone that
+## sets alight whoever walks into it (they run, burning, and fall), hurts you
+## while you stand in it, sets cars' tanks and gas-station pumps going.
 ##     explosions.explode("he", point, 0.03, true)
+##     explosions.molotov(point, true)
 
 const Ragdoll := preload("res://scripts/ragdoll.gd")
 
@@ -44,6 +48,11 @@ const CANISTER_FROM := Vector2(30.0, 140.0)
 const CANISTER_SIZE := 0.3
 const LEAK := 1.2               # seconds a shot canister hisses before it goes
 const CATCH := 2.0              # x the lethal radius: a fuel tank this close catches fire
+const MOLOTOV_R := 3.0          # metres a Molotov's fire covers...
+const MOLOTOV_FOR := 10.0       # ...for so many seconds
+const BURN_FOR := 2.5           # seconds someone set alight runs before falling
+const FIRE_HURTS := 20.0        # health a second, standing in fire
+const ZONE_TICK := 0.25         # seconds between fire's checks
 
 var walker
 var traffic
@@ -58,6 +67,11 @@ var fires: Array = []           # burning pools and jets: nodes, oldest first
 var canisters: Array = []       # {node, pos, leak}
 var burning: Array = []         # traffic vehicles on fire, waiting to go
 var wrecks: Array = []          # burnt-out vehicles: [vehicle, seconds left]
+var zones: Array = []           # fire on the ground: {pos, r, left, by_you}
+var aflame: Array = []          # people burning: {p, left, fx}
+var stations                    # the petrol stations (GasStations; optional)
+var _zone_t := 0.0
+var _now_by_you := false
 var _lights: Array = []         # {light, peak, t, attack, hold, decay, flicker}
 var _later: Array = []          # [seconds, Callable]
 var _rng := RandomNumberGenerator.new()
@@ -146,6 +160,7 @@ func _go(kind: String, at: Vector3, size01: float, by_you: bool, x: Dictionary) 
 	later(maxf(1.5, x.t_fb * 3.0), func(): live -= 1)
 	var s: float = x.S
 	var big := tier(size01)
+	_now_by_you = by_you
 	var ear: Vector3 = walker.cam.global_position if walker and walker.cam else at
 	var d := ear.distance_to(at)
 	_sound(kind, at, x, d)
@@ -366,6 +381,107 @@ func _pool(at: Vector3, s: float, x: Dictionary, secs: float) -> void:
 	_lights.append({"l": l, "peak": 1.5 * sqrt(s), "t": 0.0, "attack": 0.5, "hold": secs, "decay": 2.0, "flicker": 0.35})
 	if sfx: sfx.play_loop("fire_crackle", at, secs)
 	_fire(p)
+	zone(at, x.fireball * 0.45 + 0.6, secs, _now_by_you)
+
+
+## Fire on the ground at `at`, `r` metres across, for `secs`.
+func zone(at: Vector3, r: float, secs: float, by_you := false) -> void:
+	zones.append({"pos": at, "r": r, "left": secs, "by_you": by_you})
+
+
+# ---- Molotov cocktails -------------------------------------------------------------------------
+
+## A Molotov breaking at `at`: glass, a whoosh, and a patch of burning fuel
+## MOLOTOV_R across for MOLOTOV_FOR seconds (no blast: it is the fire that does it).
+func molotov(at: Vector3, by_you := true) -> void:
+	if sfx:
+		sfx.play("glass_smash", at, "Impacts")
+		sfx.play("fire_whoosh", at, "Explosions")
+	_spray(at + Vector3(0, 0.3, 0), 26, _flame_mat(), 0.35, 0.8, Vector3.UP, 70.0, 2.0, 5.0, Vector3(0, 2.0, 0), 1.3, 1.0, _ramp(FIRE))
+	_spray(at + Vector3(0, 0.2, 0), 12, _mat_add("shard", Color(0.6, 0.9, 0.6)), 0.3, 0.6, Vector3.UP, 80.0, 2.0, 4.0, Vector3(0, -9.8, 0), 0.0, 0.1, null, 0.0, _box(0.03))
+	var p := _spray(at + Vector3(0, 0.15, 0), 90, _flame_mat(), 0.5, 1.1, Vector3.UP, 12.0, 0.6, 1.8, Vector3(0, 1.4, 0), 1.4, MOLOTOV_R * 0.8, _ramp(FIRE), 0.0, null, true)
+	p.explosiveness = 0.0
+	p.one_shot = false
+	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX        # spread over the ground, not hanging in the air
+	p.emission_box_extents = Vector3(MOLOTOV_R * 0.75, 0.05, MOLOTOV_R * 0.75)
+	var sm := _spray(at + Vector3(0, 2.2, 0), 18, _smoke_mat(), 2.0, 3.5, Vector3.UP, 15.0, 1.0, 2.0, Vector3(0, 0.8, 0), 2.2, MOLOTOV_R * 0.5, _ramp([Color(0.15, 0.13, 0.12, 0.55), Color(0.2, 0.19, 0.18, 0.0)]), 0.0, null, true)
+	sm.explosiveness = 0.0
+	sm.one_shot = false
+	_stop_after(sm, MOLOTOV_FOR)
+	_stop_after(p, MOLOTOV_FOR)
+	var l := OmniLight3D.new(); l.light_color = Color(1.0, 0.55, 0.25); l.omni_range = 9.0
+	add_child(l); l.global_position = at + Vector3(0, 1.2, 0)
+	_lights.append({"l": l, "peak": 2.2, "t": 0.0, "attack": 0.08, "hold": MOLOTOV_FOR - 1.5, "decay": 1.5, "flicker": 0.35})
+	if sfx: sfx.play_loop("fire_crackle", at, MOLOTOV_FOR)
+	_fire(p)
+	_ground(at, MOLOTOV_R * 1.4, "scorch", 0.7)
+	if juice and walker:
+		juice.add(0.0, 0.0, 0.25 / (1.0 + walker.global_position.distance_to(at) / 10.0))
+	zone(at, MOLOTOV_R, MOLOTOV_FOR, by_you)
+	if crime:
+		crime._scare(at)
+	_crime(at, by_you, false)
+
+
+# Fire's work, a few times a second: what stands in it catches.
+func _zones(delta: float) -> void:
+	for z in zones.duplicate():
+		z.left -= delta
+		if z.left <= 0.0:
+			zones.erase(z)
+	for b in aflame.duplicate():                      # the burning run, then fall
+		b.left -= delta
+		var p: Dictionary = b.p
+		if b.left <= 0.0 or not walker or not walker.peds.has(p):
+			aflame.erase(b)
+			p.aflame = false
+			if is_instance_valid(b.fx): _stop_after(b.fx, 0.0)
+			if walker and walker.peds.has(p) and not p.get("dead", false):
+				if crime: crime._down_ped(p)
+				else: p.dead = true
+				walker.knock(p, Vector3(_rng.randf_range(-1, 1), 1.0, _rng.randf_range(-1, 1)))
+	_zone_t -= delta
+	if _zone_t > 0.0 or zones.is_empty():
+		return
+	_zone_t = ZONE_TICK
+	for z in zones:
+		var at: Vector3 = z.pos
+		var r: float = z.r
+		if walker:
+			for p in walker.peds:
+				if p.get("dead", false) or p.has("rag") or p.get("aflame", false):
+					continue
+				if Vector2(p.pos.x - at.x, p.pos.z - at.z).length() < r:
+					_set_alight(p, at)
+			if walker.vehicle == null and Vector2(walker.global_position.x - at.x, walker.global_position.z - at.z).length() < r \
+					and absf(walker.global_position.y - at.y) < 2.5:
+				walker.hurt(FIRE_HURTS * ZONE_TICK)
+				if juice: juice.add(0.12, 0.0, 0.05, 12.0)
+		if traffic:
+			for v in traffic.vehicles:
+				if HP.has(v.kind) and not v.get("wrecked", false) and v.pos.distance_to(Vector2(at.x, at.z)) < r + 1.0:
+					v.fire_t = float(v.get("fire_t", 0.0)) + ZONE_TICK
+					if v.fire_t >= 0.7:
+						v.fire_t = 0.0
+						damage(v, 1, z.by_you)
+		for c in canisters:
+			if c.leak < 0.0 and c.pos.distance_to(at) < r + 0.5:
+				c.leak = LEAK
+				c.by_you = z.by_you
+		if stations:
+			stations.burn_near(at, r + 0.8, z.by_you)
+
+
+# Someone set alight: flames on them, running wild, then they fall.
+func _set_alight(p: Dictionary, from: Vector3) -> void:
+	p.aflame = true
+	p.flee = BURN_FOR + 1.0
+	p.flee_from = from
+	var fx := _spray(Vector3.ZERO, 16, _flame_mat(), 0.3, 0.6, Vector3.UP, 15.0, 0.5, 1.5, Vector3(0, 1.5, 0), 0.5, 0.35, _ramp(FIRE), 0.0, null, true)
+	fx.explosiveness = 0.0; fx.one_shot = false
+	fx.reparent(p.h, false)
+	fx.position = Vector3(0, 1.0, 0)
+	aflame.append({"p": p, "left": BURN_FOR, "fx": fx})
 
 
 # A gas jet: a cone of flame from the burst source, hissing.
@@ -457,11 +573,19 @@ func _blast(kind: String, at: Vector3, x: Dictionary, by_you: bool) -> void:
 	for c in canisters.duplicate():
 		if c.pos.distance_to(at) < lethal * 1.5 and c.leak < 0.0:
 			c.leak = _rng.randf_range(0.2, 0.5)
+	# Petrol-station pumps close by catch.
+	if stations:
+		stations.burn_near(at, lethal * CATCH * 1.3, by_you)
 	# Everyone round about runs.
 	if crime:
 		crime._scare(at)
 	if traffic:
 		traffic.scare(at, 3.0 * x.lethal + 40.0)
+	_crime(at, by_you, hit_cop)
+
+
+# If you did it, it is a crime: two stars (three with an officer caught).
+func _crime(at: Vector3, by_you: bool, hit_cop: bool) -> void:
 	if by_you and crime:
 		crime.stars = maxi(crime.stars, 3 if hit_cop else 2)
 		crime.last_seen = walker.global_position if walker else at
@@ -653,6 +777,7 @@ func step(delta: float) -> void:
 			var v: Dictionary = w[0]
 			if traffic and traffic.vehicles.has(v) and not (walker and walker.vehicle == v):
 				traffic._despawn(v)
+	_zones(delta)
 	_canisters(delta)
 
 

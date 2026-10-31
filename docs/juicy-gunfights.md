@@ -9,6 +9,8 @@
 > Slice 2: the explosions (§9), all three presets on the `size01` slider with the §9.2 formulas
 > and tiers (`scripts/explosions.gd`), set off by shooting cars (gasoline), thrown grenades (HE)
 > and gas canisters (gas), with their gameplay, close-blast hearing loss and the sound delay.
+> Since: Molotov cocktails and fire zones on the ground, and petrol stations whose pumps and tank
+> go up (`scripts/gas_stations.gd`).
 > Not yet: the other weapon recipes (§6.2–6.8), near-miss cracks, the PSX pass (§11), ducking
 > (§10.3), world time dips, heat distortion and screen-space dust.
 

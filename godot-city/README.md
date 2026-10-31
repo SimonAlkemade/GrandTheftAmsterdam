@@ -23,6 +23,7 @@ macOS, Windows and Linux.
 | E | get in or out of the car, Canta, bike, bus, tram or boat next to you |
 | Left click / R | shoot / reload the pistol (Mission 2) |
 | G | throw a grenade (when you have one) |
+| F | throw a Molotov cocktail (when you have one) |
 | M (or Tab) | switch to the map |
 | Esc | free the mouse |
 
@@ -176,6 +177,34 @@ alone, a car shot until it goes and the one beside it, a grenade and a
 canister:
 
     godot --headless --path godot-city --script tests/explosions_test.gd
+
+### Molotovs and petrol stations
+
+**Molotov cocktails** lie in the street among the pistols and grenades: a
+green bottle with a burning rag over a red-orange ring (red-orange dots on the
+minimap), two in each, four at most. **F** throws one where you aim; it does
+not bounce, it breaks on whatever it hits first: glass, a whoosh, and a patch
+of burning fuel 3 m across for ten seconds. Fire on the ground (a Molotov's, a
+burning fuel pool's after a car or a pump goes up, a gas jet's) sets alight
+whoever walks into it (they run, burning, and fall dead two and a half seconds
+later), takes 20 health a second off you while you stand in it, sets a car's
+tank going (it smokes, burns and goes up), sets gas canisters hissing and
+petrol pumps burning. Throwing one is a crime: two stars.
+
+**Petrol stations**: Amsterdam's real ones, 119 of them (`index.json`'s
+`stations`, from Overture's places by `prepare_godot_city.py`, charging points
+left out), each built when its chunk loads: a canopy on four posts in the
+brand's colours with the name along its edge, two to four pumps on their
+islands, a shop, a price totem; yellow squares on the minimap, the nearest one
+held on the rim so you can find it. A pump shot three times (or caught by
+fire, or by a blast) burns a second or two and goes up, and sets the pumps
+beside it burning; once two have gone, the tank under the forecourt goes too:
+one big gasoline blast (the large tier), the canopy torn off and thrown, the
+place left a black ruin (a grey square), and you very wanted.
+`tests/fire_test.gd` checks the station list, a station shot until the tank
+goes, and a Molotov's fire on a pedestrian, on you, on a car and on a pump:
+
+    godot --headless --path godot-city --script tests/fire_test.gd
 
 ### How the pistol feels
 
@@ -484,7 +513,8 @@ another size: `python chunk_godot_tiles.py godot-city/data 375`.
 - `scripts/sfx.gd`, `scripts/gun_fx.gd`, `scripts/juice.gd`: the sounds (made in code), the pistol's
   feel at the gun and where it lands, and the camera's shake and punch (`docs/juicy-gunfights.md`)
 - `scripts/explosions.gd`: gas, gasoline and high-explosive blasts on one size slider, burning cars,
-  gas canisters
+  gas canisters, Molotovs and fire on the ground
+- `scripts/gas_stations.gd`: the petrol stations, built as their chunks load, and how one goes up
 - `scripts/bike_rig.gd`: a ridden bike: wheels, crank, and the rider's legs and arms on pedals and grips
 - `scripts/boat.gd`, `scripts/boats.gd`: the floating boats and where they are moored
 - `models/canta.glb`: the Canta, modelled by `blender/make_canta.py`

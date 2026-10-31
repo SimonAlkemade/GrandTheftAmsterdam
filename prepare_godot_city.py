@@ -76,6 +76,28 @@ def normal_maps(tex_dir):
         Image.fromarray(((n * 0.5 + 0.5) * 255).astype(np.uint8)).save(f.with_name(f.name.replace("_bump", "_nrm")))
 
 
+# Charging points are listed as gas stations too: not the kind that explodes.
+CHARGER = re.compile(r"charg|allego|pulse|fastned|tesla|ionity|recharge|evbox|laad|e-flux|vattenfall|electr", re.I)
+
+
+def add_stations(dst):
+    """index.json gains "stations": [[name, x_dm, y_dm], ...], the city's
+    petrol stations (from search.json's places), for the game to build and
+    blow up (the web build has index.json, not search.json)."""
+    index = json.loads((dst / "index.json").read_text())
+    places = json.loads((dst / "search.json").read_text())["places"]
+    out = []
+    for name, cat, x, y in places:
+        if cat not in ("gas_station", "fueling_station") or CHARGER.search(name):
+            continue
+        if any((x - a) ** 2 + (y - b) ** 2 < 300 ** 2 for _, a, b in out):   # 30 m: the same one twice
+            continue
+        out.append([name, x, y])
+    index["stations"] = out
+    (dst / "index.json").write_text(json.dumps(index, separators=(",", ":"), ensure_ascii=False))
+    return len(out)
+
+
 def main(src="out/city", dst="godot-city/data"):
     src, dst = Path(src), Path(dst)
     (dst / "tiles").mkdir(parents=True, exist_ok=True)
@@ -88,6 +110,7 @@ def main(src="out/city", dst="godot-city/data"):
         n += 1
     normal_maps(Path(dst).parent / "textures")
     chunks = chunk_data(dst)               # the pieces the game streams
+    print(f"{add_stations(dst)} petrol stations")
     size = sum(p.stat().st_size for p in (dst / "tiles").glob("*.json"))
     print(f"{n} tiles in {chunks} chunks, {size / 1e6:.1f} MB -> {dst}")
 

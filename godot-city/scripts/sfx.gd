@@ -31,6 +31,8 @@ const MIX := {
 	"gas_whump": [-1.0, 0.03], "air_rush": [-6.0, 0.03], "gas_hiss": [-10.0, 0.03],
 	"fuel_pop": [-4.0, 0.04], "whoomf": [0.0, 0.03], "roar": [-5.0, 0.03], "fire_crackle": [-9.0, 0.03],
 	"rumble": [-2.0, 0.03], "tinnitus": [-18.0, 0.0], "pin": [-10.0, 0.04], "clink": [-10.0, 0.06],
+	# Molotovs and petrol stations
+	"glass_smash": [-3.0, 0.05], "fire_whoosh": [-3.0, 0.04], "rag": [-12.0, 0.05], "metal_groan": [-4.0, 0.05],
 }
 const LOOPS := ["gas_hiss", "fire_crackle"]
 
@@ -268,6 +270,20 @@ func _make(name: String, seed: int) -> PackedFloat32Array:
 			return _mix(_mix(_click(0.2, 0.0, r), _click(0.2, j.call(0.08), r), 0.8), _delay(_decay(_sine(0.1, j.call(4100.0)), 0.02), 0.08), 0.3)
 		"clink":                          # a grenade bouncing on the stones
 			return _mix(_decay(_sine(0.15, j.call(2900.0)), 0.025), _decay(_hp(_noise(0.15, r), 3000.0), 0.004), 0.6)
+		"glass_smash":                    # a bottle breaking: a bright crash, and shards tinkling
+			var c := _decay(_hp(_noise(0.7, r), j.call(2500.0)), 0.05)
+			var tk := _mix(_delay(_decay(_sine(0.6, j.call(4300.0)), 0.03), j.call(0.07)), _delay(_decay(_sine(0.6, j.call(6100.0)), 0.025), j.call(0.15)), 0.8)
+			tk = _mix(tk, _delay(_decay(_sine(0.6, j.call(5200.0)), 0.02), j.call(0.24)), 0.6)
+			return _mix(_sat(_gain(c, 1.6), 1.4), tk, 0.5)
+		"fire_whoosh":                    # the fuel catching: a rising rush of air
+			var fw := _lp(_noise(0.9, r), j.call(900.0))
+			for i in fw.size(): fw[i] *= sin(PI * float(i) / fw.size()) * (1.0 - 0.5 * float(i) / fw.size())
+			return _mix(fw, _decay(_sweep(0.9, j.call(70.0), 110.0), 0.3), 0.5)
+		"rag":                            # a lighter, and the rag catching
+			return _mix(_click(0.4, 0.0, r), _attack(_decay(_lp(_noise(0.4, r), j.call(1500.0)), 0.15), 0.05), 0.5)
+		"metal_groan":                    # steel bending and giving way
+			var g := _vibrato(_sweep(1.6, j.call(140.0), j.call(70.0)), 3.0, 0.08)
+			return _attack(_decay(_sat(_gain(_mix(g, _lp(_noise(1.6, r), 400.0), 0.4), 2.0), 1.5), 0.6), 0.15)
 	return PackedFloat32Array([0.0])
 
 

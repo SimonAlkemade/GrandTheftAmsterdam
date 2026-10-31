@@ -28,6 +28,7 @@ const Juice := preload("res://scripts/juice.gd")
 const GunFx := preload("res://scripts/gun_fx.gd")
 const Explosions := preload("res://scripts/explosions.gd")
 const Crime := preload("res://scripts/crime.gd")
+const GasStations := preload("res://scripts/gas_stations.gd")
 const CrimeHud := preload("res://scripts/crime_hud.gd")
 
 var mats
@@ -39,6 +40,7 @@ var sfx
 var juice
 var gun_fx
 var explosions
+var gas_stations
 var _boom_size := 0.5           # the map panel's test slider
 var _boomed := false
 var cam: Camera3D
@@ -136,6 +138,11 @@ func _ready() -> void:
 	add_child(explosions)
 	explosions.setup(walker, traffic, crime, sfx, juice, gun_fx, streamer)
 	crime.explosions = explosions
+	gas_stations = GasStations.new()
+	add_child(gas_stations)
+	gas_stations.setup(streamer, walker, traffic, explosions)
+	explosions.stations = gas_stations
+	crime.stations = gas_stations
 	walker.juice = juice; walker.gun_fx = gun_fx
 
 	_ui()

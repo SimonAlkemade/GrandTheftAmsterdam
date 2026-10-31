@@ -169,6 +169,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			and vehicle == null and state != "swim" and state != "climb":
 		crime.throw_grenade()
 		return
+	# F throws a Molotov cocktail.
+	if crime and event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_F \
+			and vehicle == null and state != "swim" and state != "climb":
+		crime.throw_molotov()
+		return
 	# The pistol: left click shoots (the mouse captured, on foot), R reloads.
 	if crime and crime.armed and vehicle == null and state != "swim" and state != "climb":
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT \

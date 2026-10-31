@@ -94,7 +94,7 @@ func _draw_map() -> void:
 			var qp := Vector2(q.pos.x, q.pos.z)
 			if qp.distance_to(p) < VIEW + 10.0:
 				_map.draw_circle(qp, 5.0, Color(0, 0, 0, 0.7))
-				_map.draw_circle(qp, 3.8, crime.GREEN if q.get("kind", "pistol") == "grenade" else crime.ORANGE)
+				_map.draw_circle(qp, 3.8, {"grenade": crime.GREEN, "molotov": crime.FLAME}.get(q.get("kind", "pistol"), crime.ORANGE))
 		if crime.explosions:                  # gas canisters: red
 			for cn in crime.explosions.canisters:
 				var cp := Vector2(cn.pos.x, cn.pos.z)
@@ -126,6 +126,20 @@ func _draw_top() -> void:
 			on = on.normalized() * (SIZE / 2.0 - 16.0)
 		_top.draw_circle(c + on, 10.0 if not far else 8.0, Color(0, 0, 0, 0.7))
 		_top.draw_circle(c + on, 7.5 if not far else 6.0, MISSION)
+	# Petrol stations: yellow squares (grey once blown up); the nearest held on the rim.
+	if crime and crime.stations:
+		var here := Vector2(walker.global_position.x, walker.global_position.z)
+		var near: Dictionary = crime.stations.nearest(walker.global_position)
+		var rim := SIZE / 2.0 - 16.0
+		for st in crime.stations.stations:
+			var dv: Vector2 = (Vector2(st.pos.x, st.pos.z) - here).rotated(walker.cam_yaw) * ((SIZE / 2.0) / VIEW)
+			if dv.length() > rim:
+				if not is_same(st, near):
+					continue
+				dv = dv.normalized() * rim
+			var col := Color(0.45, 0.45, 0.45) if st.ruined else Color(1.0, 0.82, 0.1)
+			_top.draw_rect(Rect2(c + dv - Vector2(5, 5), Vector2(10, 10)), Color(0, 0, 0, 0.7))
+			_top.draw_rect(Rect2(c + dv - Vector2(3.5, 3.5), Vector2(7, 7)), col)
 	# The gun shop: a blue blip, held on the rim while it is out of range.
 	if crime and crime.shop != Vector3.INF and (crime.state == "shop" or crime.armed and crime.rounds < crime.START_ROUNDS):
 		var ds := Vector2(crime.shop.x, crime.shop.z) - Vector2(walker.global_position.x, walker.global_position.z)

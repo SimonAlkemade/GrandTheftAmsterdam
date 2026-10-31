@@ -18,7 +18,9 @@ extends Node3D
 ## Grenades lie about too (green): two in each, four at most in your pocket.
 ## G throws one where you aim; it bounces, and three seconds later it goes
 ## off (Explosions, "he"). A car shot enough catches fire and goes up, a gas
-## canister shot hisses and goes (both in Explosions).
+## canister shot hisses and goes (both in Explosions). Molotov cocktails
+## (red-orange) too: F throws one, it breaks where it lands and the fuel burns
+## (Explosions.molotov). Shooting a petrol pump sets it going (GasStations).
 
 signal announce(title: String, sub: String)
 
@@ -56,6 +58,9 @@ const MAX_GRENADES := 4
 const GRENADE_FUSE := 3.0
 const GRENADE_SIZE := 0.03      # Explosions' slider: about a real hand grenade
 const GREEN := Color(0.35, 0.85, 0.3)
+const MOLOTOVS_EACH := 2
+const MAX_MOLOTOVS := 4
+const FLAME := Color(1.0, 0.32, 0.08)
 const HITSTOP := 0.05           # seconds someone hit freezes before going limp (3 frames)
 
 var streamer
@@ -85,6 +90,9 @@ var pickups: Array = []         # {pos, node}: pistols lying in the street
 var gun_fx                      # how a shot looks, sounds and feels (GunFx; optional)
 var explosions                  # blasts, burning cars, gas canisters (Explosions; optional)
 var grenades := 0               # in your pocket
+var molotovs := 0
+var bottles: Array = []         # {body, t}: Molotovs on their way
+var stations                    # the petrol stations (GasStations; optional)
 var thrown: Array = []          # {body, fuse}: grenades on their way
 var sfx                         # the sounds (Sfx; optional)
 var _rng := RandomNumberGenerator.new()
@@ -124,6 +132,8 @@ func ammo_text() -> String:
 		t = "Pistol  %d / %d%s" % [mag, rounds, "  reloading" if _reload > 0.0 else ""]
 	if grenades > 0:
 		t += ("\n" if t != "" else "") + "Grenades  %d   (G)" % grenades
+	if molotovs > 0:
+		t += ("\n" if t != "" else "") + "Molotovs  %d   (F)" % molotovs
 	return t
 
 
@@ -253,6 +263,8 @@ func fire() -> void:
 			explosions.damage(col.get_meta("veh"), 1, true)
 		elif col is Object and col.has_meta("canister"):
 			explosions.hit_canister(col.get_meta("canister"))
+		elif col is Object and col.has_meta("pump") and stations:
+			stations.hit_pump(col.get_meta("pump"), true)
 	if victim == null and not hit.is_empty():
 		if not gun_fx: _puff(at)
 		if hit.collider is RigidBody3D:                     # a real vehicle takes the knock
@@ -381,6 +393,7 @@ func _physics_process(delta: float) -> void:
 	_at_shop()
 	_pickups(delta)
 	_grenades(delta)
+	_bottles(delta)
 	if walker.health <= 0.0:
 		_wasted()
 		return
@@ -612,6 +625,12 @@ func _pickups(_delta: float) -> void:
 				grenades = mini(MAX_GRENADES, grenades + GRENADES_EACH)
 				announce.emit("GRENADES", "%d in your pocket. G throws one where you aim." % grenades)
 			continue
+		if p.get("kind", "pistol") == "molotov":
+			if d < 1.4 and walker.vehicle == null and walker.stun <= 0.0 and molotovs < MAX_MOLOTOVS:
+				p.node.queue_free(); pickups.erase(p)
+				molotovs = mini(MAX_MOLOTOVS, molotovs + MOLOTOVS_EACH)
+				announce.emit("MOLOTOVS", "%d in your pocket. F throws one where you aim." % molotovs)
+			continue
 		if d < 1.4 and walker.vehicle == null and walker.stun <= 0.0 and (not armed or mag + rounds < PICKUP_ROUNDS):
 			p.node.queue_free(); pickups.erase(p)
 			armed = true; mag = PICKUP_ROUNDS; rounds = 0; _reload = 0.0
@@ -630,8 +649,9 @@ func _place_pickup(from: Vector3) -> void:
 			continue
 		if pickups.any(func(q): return q.pos.distance_to(p) < 30.0):
 			continue
-		var kind := "grenade" if _rng.randf() < 0.35 else "pistol"
-		var col: Color = GREEN if kind == "grenade" else ORANGE
+		var roll := _rng.randf()
+		var kind := "pistol" if roll < 0.5 else ("grenade" if roll < 0.75 else "molotov")
+		var col: Color = {"pistol": ORANGE, "grenade": GREEN, "molotov": FLAME}[kind]
 		var n := Node3D.new()
 		var ring_m := StandardMaterial3D.new()
 		ring_m.albedo_color = Color(col.r, col.g, col.b, 0.8)
@@ -646,6 +666,9 @@ func _place_pickup(from: Vector3) -> void:
 		if kind == "grenade":
 			gun.add_child(_grenade_mesh(true))
 			gun.scale = Vector3.ONE * 3.0
+		elif kind == "molotov":
+			gun.add_child(_bottle_mesh(true))
+			gun.scale = Vector3.ONE * 2.6
 		else:
 			var gm := StandardMaterial3D.new(); gm.albedo_color = Color("26282c"); gm.metallic = 0.6; gm.roughness = 0.35
 			gm.emission_enabled = true; gm.emission = ORANGE; gm.emission_energy_multiplier = 0.9
@@ -731,6 +754,81 @@ func _grenades(delta: float) -> void:
 				explosions.explode("he", at, GRENADE_SIZE, true)
 
 
+# ---- Molotov cocktails -------------------------------------------------------------------------
+
+## A bottle of petrol with a rag in its neck (glowing when it lies about).
+func _bottle_mesh(glow := false) -> Node3D:
+	var n := Node3D.new()
+	var m := StandardMaterial3D.new(); m.albedo_color = Color(0.35, 0.55, 0.3, 0.75); m.roughness = 0.15
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	if glow:
+		m.emission_enabled = true; m.emission = FLAME; m.emission_energy_multiplier = 0.5
+	var body := CylinderMesh.new(); body.top_radius = 0.035; body.bottom_radius = 0.04; body.height = 0.16; body.radial_segments = 10
+	var mi := MeshInstance3D.new(); mi.mesh = body; mi.material_override = m
+	n.add_child(mi)
+	var neck := CylinderMesh.new(); neck.top_radius = 0.013; neck.bottom_radius = 0.03; neck.height = 0.07; neck.radial_segments = 8
+	var ni := MeshInstance3D.new(); ni.mesh = neck; ni.material_override = m; ni.position.y = 0.115
+	n.add_child(ni)
+	var rm := StandardMaterial3D.new(); rm.albedo_color = Color(0.85, 0.8, 0.7)
+	rm.emission_enabled = true; rm.emission = FLAME; rm.emission_energy_multiplier = 1.5 if glow else 2.5
+	var rag := BoxMesh.new(); rag.size = Vector3(0.03, 0.06, 0.03)
+	var ri := MeshInstance3D.new(); ri.mesh = rag; ri.material_override = rm; ri.position.y = 0.17
+	n.add_child(ri)
+	return n
+
+
+## F: throw one where you aim. It breaks on whatever it hits first.
+func throw_molotov() -> void:
+	if molotovs <= 0 or walker.vehicle != null or walker.stun > 0.0:
+		return
+	molotovs -= 1
+	var cam: Camera3D = walker.cam
+	var dir := -cam.global_transform.basis.z
+	var right := Vector3(cos(walker.cam_yaw), 0, -sin(walker.cam_yaw))
+	walker.heading = walker.cam_yaw
+	aim_t = 0.0
+	var b := RigidBody3D.new()
+	b.mass = 0.6
+	b.collision_layer = 0
+	b.collision_mask = 1 | 2 | 4 | 8
+	b.continuous_cd = true
+	b.contact_monitor = true
+	b.max_contacts_reported = 2
+	var cs := CollisionShape3D.new(); var sp := SphereShape3D.new(); sp.radius = 0.06
+	cs.shape = sp
+	b.add_child(cs)
+	b.add_child(_bottle_mesh())
+	var fl := OmniLight3D.new(); fl.light_color = FLAME; fl.light_energy = 1.2; fl.omni_range = 4.0
+	fl.position.y = 0.2
+	b.add_child(fl)
+	add_child(b)
+	b.global_position = walker.global_position + Vector3(0, 1.55, 0) + right * 0.25 + dir * 0.4
+	b.linear_velocity = dir * 13.0 + Vector3.UP * 3.5
+	b.angular_velocity = Vector3(_rng.randf_range(-6, 6), _rng.randf_range(-2, 2), _rng.randf_range(-6, 6))
+	var g := {"body": b, "t": 4.0, "hit": false}
+	b.body_entered.connect(func(_other): g.hit = true)
+	bottles.append(g)
+	if sfx: sfx.play("rag", null, "PlayerWeapon")
+
+
+func _bottles(delta: float) -> void:
+	for g in bottles.duplicate():
+		var b: RigidBody3D = g.body
+		g.t -= delta
+		if not is_instance_valid(b):
+			bottles.erase(g); continue
+		if g.hit or g.t <= 0.0 or b.get_contact_count() > 0:
+			bottles.erase(g)
+			var at := b.global_position
+			b.queue_free()
+			# The fuel runs down whatever it hit to the ground under it.
+			var q := PhysicsRayQueryParameters3D.create(at + Vector3(0, 0.3, 0), at + Vector3(0, -8, 0), 2)
+			var down: Dictionary = walker.get_world_3d().direct_space_state.intersect_ray(q)
+			var ground: float = down.position.y if not down.is_empty() else maxf(at.y - 0.06, 0.0)
+			if explosions:
+				explosions.molotov(Vector3(at.x, ground + 0.02, at.z), true)
+
+
 # ---- the taser -------------------------------------------------------------------------
 
 # An officer fires a taser at you: two yellow wires flash across, and, near
@@ -770,6 +868,7 @@ func _wasted() -> void:
 	mission.money -= bill
 	armed = false; mag = 0; rounds = 0
 	grenades = 0
+	molotovs = 0
 	stars = 0
 	_arrest = 0.0
 	state = "shop"
@@ -793,6 +892,7 @@ func _busted() -> void:
 	mission.money -= fine
 	armed = false; mag = 0; rounds = 0
 	grenades = 0
+	molotovs = 0
 	stars = 0
 	_arrest = 0.0
 	state = "shop"
