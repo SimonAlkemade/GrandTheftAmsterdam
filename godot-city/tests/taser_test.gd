@@ -83,7 +83,12 @@ func _run() -> void:
 	_check(crime.pickups.size() == Crime.PICKUPS, "pistols lie in the street (%d)" % crime.pickups.size())
 	var near: bool = crime.pickups.all(func(p): return crime._dist(p.pos) > Crime.PICKUP_FROM.x - 1.0 and crime._dist(p.pos) < Crime.PICKUP_FROM.y + 1.0)
 	_check(near, "%.0f-%.0f m from you" % [Crime.PICKUP_FROM.x, Crime.PICKUP_FROM.y])
-	_stand(crime.pickups[0].pos)
+	var pistol: Dictionary = crime.pickups[0]
+	for pk in crime.pickups:
+		if pk.get("kind", "pistol") == "pistol": pistol = pk
+	if pistol.get("kind", "pistol") != "pistol":       # (three grenades: make one a pistol)
+		pistol.kind = "pistol"
+	_stand(pistol.pos)
 	await _step(2)
 	_check(crime.armed and crime.mag == Crime.PICKUP_ROUNDS and crime.rounds == 0, "walking over one: a pistol, %d rounds in it" % crime.mag)
 	# 2. Ten shots and it is spent.

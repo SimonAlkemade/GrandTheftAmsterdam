@@ -164,6 +164,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		else:
 			_get_in()
 		return
+	# G throws a grenade where you aim (on foot).
+	if crime and event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_G \
+			and vehicle == null and state != "swim" and state != "climb":
+		crime.throw_grenade()
+		return
 	# The pistol: left click shoots (the mouse captured, on foot), R reloads.
 	if crime and crime.armed and vehicle == null and state != "swim" and state != "climb":
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT \
@@ -448,6 +453,7 @@ func _physical(v: Dictionary, moving: bool) -> VehicleBody3D:
 	if moving:
 		b.linear_velocity = Vector3(-sin(visual.rotation.y), 0, -cos(visual.rotation.y)) * float(v.speed)
 	v.body = b
+	b.set_meta("veh", v)                 # (what a bullet or a blast hit)
 	v.rig = visual
 	v.parts[0][0] = b
 	return b

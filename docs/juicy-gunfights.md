@@ -6,8 +6,11 @@
 > (`scripts/sfx.gd`), recoil springs and the muzzle (`scripts/gun_fx.gd`), the §7 impact matrix for
 > the surfaces the city has (stone, metal, water, flesh) with decals and enemy-local hitstop, and the
 > juice budget with the trauma camera and its accessibility settings (`scripts/juice.gd`).
-> Not yet: explosions (§9), the other weapon recipes (§6.2–6.8), near-miss cracks, the PSX pass
-> (§11), ducking and hearing loss (§10.3), world time dips.
+> Slice 2: the explosions (§9), all three presets on the `size01` slider with the §9.2 formulas
+> and tiers (`scripts/explosions.gd`), set off by shooting cars (gasoline), thrown grenades (HE)
+> and gas canisters (gas), with their gameplay, close-blast hearing loss and the sound delay.
+> Not yet: the other weapon recipes (§6.2–6.8), near-miss cracks, the PSX pass (§11), ducking
+> (§10.3), world time dips, heat distortion and screen-space dust.
 
 ---
 

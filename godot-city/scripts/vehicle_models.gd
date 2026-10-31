@@ -105,7 +105,7 @@ static func canta(color := Color("9e0b10")) -> Node3D:
 
 ## A solid box for a vehicle in traffic, so what you drive can hit it (it moves
 ## with the vehicle; nothing moves it).
-static func solid(n: Node3D, size: Vector3, y: float) -> void:
+static func solid(n: Node3D, size: Vector3, y: float) -> AnimatableBody3D:
 	var b := AnimatableBody3D.new()
 	b.collision_layer = 4               # VehiclePhysics.TRAFFIC_LAYER
 	b.collision_mask = 0
@@ -114,6 +114,7 @@ static func solid(n: Node3D, size: Vector3, y: float) -> void:
 	var cs := CollisionShape3D.new(); cs.shape = s; cs.position.y = y
 	b.add_child(cs)
 	n.add_child(b)
+	return b
 
 
 ## Draw calls: every mesh of a model but its wheels merged into one mesh, a

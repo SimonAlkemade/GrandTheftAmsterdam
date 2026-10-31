@@ -22,7 +22,8 @@ macOS, Windows and Linux.
 | Wheel | camera distance |
 | E | get in or out of the car, Canta, bike, bus, tram or boat next to you |
 | Left click / R | shoot / reload the pistol (Mission 2) |
-| M (or Tab, G) | switch to the map |
+| G | throw a grenade (when you have one) |
+| M (or Tab) | switch to the map |
 | Esc | free the mouse |
 
 | Map mode | |
@@ -134,6 +135,47 @@ way, within 70 m) the stars flash; stay out of sight 10 s plus 5 s a star and
 they give up. `tests/crime_test.gd` plays it through on a grid of test streets:
 
     godot --headless --path godot-city --script tests/crime_test.gd
+
+### Explosions
+
+Three kinds, from the same design (`docs/juicy-gunfights.md` §9), each on one
+size slider: `size` 0..1 is an equivalent mass of 0.2 to 200 kg and a scale
+S = cube root of that, and every radius, time, count, light, sound and shake
+follows from S (`scripts/explosions.gd`); the bigger ones add layers rather
+than only growing.
+
+- **Gasoline**, a car, Canta or bus whose tank goes: shoot a car six times
+  (a Canta four, a bus ten); it smokes from the engine, catches fire, and a
+  second and a half later goes up in the Hollywood fireball, orange and
+  rolling up into a black column of smoke, with burning bits flung out and a
+  pool of burning fuel left for half a minute or more. The wreck, burnt
+  black, is thrown, and stays a minute. A car close beside it catches too.
+- **High explosive**, a grenade: green grenades lie in the street like the
+  pistols (two in each, four at most); **G** throws one where you aim, it
+  bounces, and three seconds later: a white flash gone in a blink, a crack
+  and a boom, a shock ring and a dust skirt racing out, dirt thrown up in
+  fingers, fragments and chunks, grey-brown smoke, a crater.
+- **Gas**, a red propane canister outside a cafe, a restaurant or a bar (red
+  squares on the minimap): shot, it hisses and spurts for a second, then a
+  soft pale WHUMP that fills a cloud, a haze that lingers, and a jet of flame
+  burning on at the canister's foot.
+
+Every blast throws people within its reach as ragdolls (those close in
+dead), hurts you by how close you are and knocks you over (it can waste
+you), throws the cars round it (setting their tanks alight close in) and
+sets canisters off; everyone round about runs, and if it was you, it is a
+crime: two stars (three with an officer caught). You see a far one before
+you hear it (the sound comes at 343 m/s), close up the camera shakes (a
+blast's own speed: a soft wobble for gas, a hard rattle for high explosive)
+and the world goes muffled for a few seconds with a ringing in your ears. In
+the map panel, **Boom** sets off Gas, Gasoline or HE at the **Size** chosen,
+30 m ahead of the camera (`--boom=he:0.5:25` with `--shot` too).
+`tests/explosions_test.gd` checks the slider against the spec's table, the
+formulas, each kind's layers, who a blast kills, knocks down or leaves
+alone, a car shot until it goes and the one beside it, a grenade and a
+canister:
+
+    godot --headless --path godot-city --script tests/explosions_test.gd
 
 ### How the pistol feels
 
@@ -441,6 +483,8 @@ another size: `python chunk_godot_tiles.py godot-city/data 375`.
 - `scripts/weather.gd`: the clock, sunshine, clouds and rain, wet streets
 - `scripts/sfx.gd`, `scripts/gun_fx.gd`, `scripts/juice.gd`: the sounds (made in code), the pistol's
   feel at the gun and where it lands, and the camera's shake and punch (`docs/juicy-gunfights.md`)
+- `scripts/explosions.gd`: gas, gasoline and high-explosive blasts on one size slider, burning cars,
+  gas canisters
 - `scripts/bike_rig.gd`: a ridden bike: wheels, crank, and the rider's legs and arms on pedals and grips
 - `scripts/boat.gd`, `scripts/boats.gd`: the floating boats and where they are moored
 - `models/canta.glb`: the Canta, modelled by `blender/make_canta.py`

@@ -48,7 +48,8 @@ var _mats := {}
 func setup(w, s, fx_sfx, fx_juice) -> void:
 	walker = w; streamer = s; sfx = fx_sfx; juice = fx_juice
 	_rng.randomize()
-	_tex = {"star": _star_tex(), "hole": _mark_tex("hole"), "crater": _mark_tex("crater"), "blood": _mark_tex("blood")}
+	_tex = {"star": _star_tex(), "hole": _mark_tex("hole"), "crater": _mark_tex("crater"), "blood": _mark_tex("blood"),
+		"scorch": _mark_tex("scorch")}
 
 
 ## A shot from `muzzle` along `dir` (right: the shooter's right, for the shell).
@@ -223,7 +224,7 @@ func _land(at: Vector3, normal: Vector3, dir: Vector3, surface: String) -> void:
 		"stone":                         # chips and a dust puff, a crater mark; now and then a ricochet
 			_burst(at, normal, _box(0.03), _mat("chip", Color(0.55, 0.53, 0.5)), _n(8.0 * k), 0.45, 2.5, 5.0, 35.0, Vector3(0, -9.8, 0))
 			_puff(at + normal * 0.1, Color(0.7, 0.68, 0.64, 0.55), 0.4 * k + 0.15, 0.8)
-			_mark(at, normal, "crater", 0.13)
+			mark(at, normal, "crater", 0.13)
 			if sfx:
 				sfx.play("stone", at)
 				if _rng.randf() < 0.1 and absf(normal.dot(dir)) < 0.5:
@@ -234,7 +235,7 @@ func _land(at: Vector3, normal: Vector3, dir: Vector3, surface: String) -> void:
 			var l := OmniLight3D.new(); l.light_color = Color(1.0, 0.78, 0.5); l.light_energy = 2.0; l.omni_range = 2.0
 			add_child(l); l.global_position = at + normal * 0.2
 			_live.append([l, Engine.get_process_frames(), 1, 0.05])
-			_mark(at, normal, "hole", 0.07)
+			mark(at, normal, "hole", 0.07)
 			if sfx: sfx.play("metal", at)
 		"water":                         # a splash column and a ring, no mark
 			_burst(at, Vector3.UP, _sphere(0.04), _mat("spray", Color(0.85, 0.92, 0.95, 0.7)), _n(14.0), 0.6, 2.5, 4.0, 14.0, Vector3(0, -9.8, 0))
@@ -247,7 +248,7 @@ func _land(at: Vector3, normal: Vector3, dir: Vector3, surface: String) -> void:
 				var q := PhysicsRayQueryParameters3D.create(at, at + dir * 2.0, 1)
 				var behind := get_world_3d().direct_space_state.intersect_ray(q)
 				if not behind.is_empty():
-					_mark(behind.position, behind.normal, "blood", 0.35)
+					mark(behind.position, behind.normal, "blood", 0.35)
 			if sfx:
 				sfx.play("flesh", at, "Impacts", 3.0)                # (player-heard +3 dB, §7)
 				sfx.play("hit_tick", null, "UI")
@@ -308,7 +309,7 @@ func _ring(at: Vector3) -> void:
 
 # A mark lying flat on the surface (a card, so it works in the browser's
 # renderer too, which has no decals), rolled at random; DECALS at most.
-func _mark(at: Vector3, normal: Vector3, kind: String, size: float) -> void:
+func mark(at: Vector3, normal: Vector3, kind: String, size: float) -> void:
 	var q := QuadMesh.new(); q.size = Vector2.ONE * size
 	var mi := MeshInstance3D.new(); mi.mesh = q
 	mi.material_override = _mat("mark_" + kind, Color.WHITE, false, _tex[kind])
@@ -392,6 +393,10 @@ func _mark_tex(kind: String) -> ImageTexture:
 					var d := p.length() * (1.0 + 0.25 * sin(atan2(p.y, p.x) * 5.0 + 1.3))
 					if d < 3.0: c = Color(0.1, 0.09, 0.08, 1)
 					elif d < 13.0: c = Color(0.32, 0.3, 0.28, 0.85 * (1.0 - (d - 3.0) / 10.0))
+				"scorch":                    # a blast's black star on the ground
+					var ang := atan2(p.y, p.x)
+					var d := p.length() * (1.0 + 0.35 * sin(ang * 7.0) + 0.15 * sin(ang * 13.0 + 2.0))
+					if d < 15.0: c = Color(0.05, 0.045, 0.04, 0.92 * clampf(1.2 - d / 15.0, 0.0, 1.0))
 				"blood":
 					var on := p.length() < 7.0
 					for b in blobs:

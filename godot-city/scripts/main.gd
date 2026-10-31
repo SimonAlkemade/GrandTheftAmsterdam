@@ -8,6 +8,8 @@ extends Node3D
 ## Test arguments (after `--`): --shot=out.png --view=map|tram|walk --hour=17
 ##   --weather=sun|clouds|rain --clock=0 (the clock stopped; it is with --shot)
 ##   --shake=0..1 (camera shake, as the map panel's slider)
+##   --boom=he|gas|gasoline:size01:metres (with --shot: set one off ahead of you
+##   --boomlead seconds before the shot, default 0.6)
 ##   --wait=12 --run (walk mode: hold W and Shift, then turn, to test running)
 ##   --vehicle=car|canta|bike|rack|bus|tram|busdrive|tramdrive|boat|swim|damrak (get in, drive, get out)
 
@@ -24,6 +26,7 @@ const Weather := preload("res://scripts/weather.gd")
 const Sfx := preload("res://scripts/sfx.gd")
 const Juice := preload("res://scripts/juice.gd")
 const GunFx := preload("res://scripts/gun_fx.gd")
+const Explosions := preload("res://scripts/explosions.gd")
 const Crime := preload("res://scripts/crime.gd")
 const CrimeHud := preload("res://scripts/crime_hud.gd")
 
@@ -35,6 +38,9 @@ var crime
 var sfx
 var juice
 var gun_fx
+var explosions
+var _boom_size := 0.5           # the map panel's test slider
+var _boomed := false
 var cam: Camera3D
 var walker
 var mission
@@ -126,6 +132,10 @@ func _ready() -> void:
 	add_child(gun_fx)
 	gun_fx.setup(walker, streamer, sfx, juice)
 	crime.gun_fx = gun_fx; crime.sfx = sfx
+	explosions = Explosions.new()
+	add_child(explosions)
+	explosions.setup(walker, traffic, crime, sfx, juice, gun_fx, streamer)
+	crime.explosions = explosions
 	walker.juice = juice; walker.gun_fx = gun_fx
 
 	_ui()
@@ -327,6 +337,27 @@ func _ui() -> void:
 		wb.focus_mode = Control.FOCUS_NONE
 		wb.pressed.connect(weather.set_mode.bind(wk[0]))
 		wrow.add_child(wb)
+	# Explosions to try (docs/juicy-gunfights.md §9): a kind, at a size, ahead of the camera.
+	var erow := HBoxContainer.new()
+	box.add_child(erow)
+	var el := Label.new(); el.text = "Boom"; el.custom_minimum_size.x = 52
+	erow.add_child(el)
+	for ek in [["gas", "Gas"], ["gasoline", "Gasoline"], ["he", "HE"]]:
+		var eb := Button.new()
+		eb.text = ek[1]
+		eb.focus_mode = Control.FOCUS_NONE
+		eb.pressed.connect(func(): boom(ek[0], _boom_size, 30.0))
+		erow.add_child(eb)
+	var bsrow := HBoxContainer.new()
+	box.add_child(bsrow)
+	var bsl := Label.new(); bsl.text = "Size"; bsl.custom_minimum_size.x = 52
+	bsrow.add_child(bsl)
+	var bsz := HSlider.new()
+	bsz.min_value = 0.0; bsz.max_value = 1.0; bsz.step = 0.05; bsz.value = _boom_size
+	bsz.custom_minimum_size.x = 190
+	bsz.focus_mode = Control.FOCUS_NONE
+	bsz.value_changed.connect(func(v): _boom_size = v)
+	bsrow.add_child(bsz)
 	# Accessibility (docs/juicy-gunfights.md §10.1): shake, flashes, the hit marker.
 	var srow := HBoxContainer.new()
 	box.add_child(srow)
@@ -625,7 +656,7 @@ func _ride() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
-		if event.physical_keycode in [KEY_G, KEY_M, KEY_TAB]:
+		if event.physical_keycode in [KEY_M, KEY_TAB]:          # (G throws a grenade now)
 			_set_mode("map" if mode == "walk" else "walk")
 		elif event.physical_keycode == KEY_ESCAPE and mode == "walk":
 			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -721,11 +752,30 @@ func _process(delta: float) -> void:
 			_test_mission()
 		if args.get("view") == "tram" and _follow == null and traffic.count().tram > 0 and _shot_t < 6.0:
 			_ride()
+		if args.has("boom") and walker.active and not _boomed and _shot_t < float(args.get("boomlead", "0.6")):
+			_boomed = true
+			var b: PackedStringArray = String(args.boom).split(":")
+			boom(b[0], float(b[1]) if b.size() > 1 else 0.5, float(b[2]) if b.size() > 2 else 30.0)
 		if _shot_t < 0.0:
 			var img := get_viewport().get_texture().get_image()
 			img.save_png(args.shot)
 			print("shot saved: ", args.shot, " ", ui.stats.text.replace("\n", " | "))
 			get_tree().quit()
+
+
+## Set off an explosion `metres` ahead of where the camera looks, on the
+## ground (the map panel's test buttons; --boom).
+func boom(kind: String, size01: float, metres: float) -> void:
+	var c: Camera3D = get_viewport().get_camera_3d()
+	var f := -c.global_transform.basis.z
+	f.y = 0.0
+	f = f.normalized() if f.length() > 0.01 else Vector3.FORWARD
+	var from: Vector3 = walker.global_position if mode == "walk" else cam.target
+	var at := from + f * metres
+	var q := PhysicsRayQueryParameters3D.create(at + Vector3(0, 30, 0), at - Vector3(0, 30, 0), 2)
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	at.y = hit.position.y if not hit.is_empty() else 0.0
+	explosions.explode(kind, at + Vector3(0, 0.4, 0), size01, false)
 
 
 # --run: hold W (and Shift after a moment), then turn with the mouse; prints

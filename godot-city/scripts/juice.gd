@@ -44,7 +44,7 @@ func add(t: float, fov_deg := 0.0, ev_bump := 0.0, hz := 15.0) -> void:
 	if t > 0.0:
 		freq = lerpf(freq, hz, t / maxf(trauma + t, 0.001))   # (blend by who adds most)
 		trauma = minf(MAX_TRAUMA, trauma + t)
-	fov = minf(MAX_FOV, fov + fov_deg)
+	fov = clampf(fov + fov_deg, -MAX_FOV, MAX_FOV)   # (negative: the inward "slap" of a blast)
 	_ev_next = minf(CALM_EV if reduce_flashes else MAX_EV, _ev_next + ev_bump)
 
 
@@ -62,7 +62,7 @@ func step(delta: float) -> void:
 	ev = _ev_next                  # one frame only
 	_ev_next = 0.0
 	trauma = maxf(0.0, trauma - DECAY * delta)
-	fov = move_toward(fov, 0.0, MAX_FOV / FOV_BACK * delta * maxf(fov / MAX_FOV, 0.15))
+	fov = move_toward(fov, 0.0, MAX_FOV / FOV_BACK * delta * maxf(absf(fov) / MAX_FOV, 0.15))
 	hit_t = maxf(0.0, hit_t - delta)
 	var s := trauma * trauma * shake_scale
 	var x := _t * freq

@@ -439,18 +439,18 @@ func _build_model(v: Dictionary) -> void:
 			var col: String = CAR_COLORS[_rng.randi() % CAR_COLORS.size()]
 			var c: Node3D = Models.police_car() if v.get("police", false) else Models.car(Color(col))
 			Models.bake(c, "police" if v.get("police", false) else "car_" + col)
-			Models.solid(c, Vector3(1.8, 1.3, 4.2), 0.75)
+			Models.solid(c, Vector3(1.8, 1.3, 4.2), 0.75).set_meta("veh", v)   # (what a bullet hit)
 			root.add_child(c); v.parts.append([c, 0.0, 4.2])
 		"bus":
 			var b: Node3D = Models.bus()
 			Models.bake(b, "bus")
-			Models.solid(b, Vector3(2.55, 3.0, 12.0), 1.6)
+			Models.solid(b, Vector3(2.55, 3.0, 12.0), 1.6).set_meta("veh", v)
 			root.add_child(b); v.parts.append([b, 0.0, 12.0])
 		"canta":
 			var col: String = CANTA_COLORS[_rng.randi() % CANTA_COLORS.size()]
 			var c: Node3D = Models.canta(Color(col))
 			Models.bake(c, "canta_" + col)
-			Models.solid(c, Vector3(1.08, 1.4, 2.3), 0.8)
+			Models.solid(c, Vector3(1.08, 1.4, 2.3), 0.8).set_meta("veh", v)
 			root.add_child(c); v.parts.append([c, 0.0, 2.3])
 		"bike":
 			var rig: Node3D = BikeRig.new()
@@ -466,7 +466,7 @@ func _build_model(v: Dictionary) -> void:
 				var cab := -1 if k == 0 else (1 if k == TRAM_SECTIONS.size() - 1 else 0)
 				var sec: Node3D = Models.tram_section(TRAM_SECTIONS[k], cab, TRAM_DOORS[k], v.line)
 				Models.bake(sec, "tram_%d" % k)
-				Models.solid(sec, Vector3(2.4, 3.0, TRAM_SECTIONS[k]), 1.7)
+				Models.solid(sec, Vector3(2.4, 3.0, TRAM_SECTIONS[k]), 1.7).set_meta("veh", v)
 				root.add_child(sec)
 				v.parts.append([sec, off, TRAM_SECTIONS[k]])
 				off += TRAM_SECTIONS[k] + 0.5

@@ -14,6 +14,11 @@ extends Node3D
 ## health (Walker) takes the taser's darts and anything that runs you over; at
 ## 0 you are WASTED: a hospital bill, the pistol gone, back on your feet at
 ## the start.
+##
+## Grenades lie about too (green): two in each, four at most in your pocket.
+## G throws one where you aim; it bounces, and three seconds later it goes
+## off (Explosions, "he"). A car shot enough catches fire and goes up, a gas
+## canister shot hisses and goes (both in Explosions).
 
 signal announce(title: String, sub: String)
 
@@ -46,6 +51,11 @@ const TASER_GAP := 3.5          # seconds between one officer's shots
 const TASER_HURT := 20.0
 const TASER_DOWN := 3.0         # seconds on the ground
 const HOSPITAL := 150           # € when you are wasted
+const GRENADES_EACH := 2        # grenades in a grenade pickup
+const MAX_GRENADES := 4
+const GRENADE_FUSE := 3.0
+const GRENADE_SIZE := 0.03      # Explosions' slider: about a real hand grenade
+const GREEN := Color(0.35, 0.85, 0.3)
 const HITSTOP := 0.05           # seconds someone hit freezes before going limp (3 frames)
 
 var streamer
@@ -73,6 +83,9 @@ var _marker: Node3D
 var _fx: Node3D
 var pickups: Array = []         # {pos, node}: pistols lying in the street
 var gun_fx                      # how a shot looks, sounds and feels (GunFx; optional)
+var explosions                  # blasts, burning cars, gas canisters (Explosions; optional)
+var grenades := 0               # in your pocket
+var thrown: Array = []          # {body, fuse}: grenades on their way
 var sfx                         # the sounds (Sfx; optional)
 var _rng := RandomNumberGenerator.new()
 
@@ -106,9 +119,12 @@ func objective() -> String:
 
 ## Ammo for the HUD, or "" without a gun.
 func ammo_text() -> String:
-	if not armed:
-		return ""
-	return "Pistol  %d / %d%s" % [mag, rounds, "  reloading" if _reload > 0.0 else ""]
+	var t := ""
+	if armed:
+		t = "Pistol  %d / %d%s" % [mag, rounds, "  reloading" if _reload > 0.0 else ""]
+	if grenades > 0:
+		t += ("\n" if t != "" else "") + "Grenades  %d   (G)" % grenades
+	return t
 
 
 func _dist(p: Vector3) -> float:
@@ -231,6 +247,12 @@ func fire() -> void:
 			gun_fx.impact(at, hit.normal, dir, gun_fx.surface_of(hit, at))
 	else:
 		_flash(muzzle)
+	if victim == null and not hit.is_empty() and explosions:
+		var col = hit.collider
+		if col is Object and col.has_meta("veh"):            # a car's tank can only take so much
+			explosions.damage(col.get_meta("veh"), 1, true)
+		elif col is Object and col.has_meta("canister"):
+			explosions.hit_canister(col.get_meta("canister"))
 	if victim == null and not hit.is_empty():
 		if not gun_fx: _puff(at)
 		if hit.collider is RigidBody3D:                     # a real vehicle takes the knock
@@ -358,6 +380,7 @@ func _physics_process(delta: float) -> void:
 		reload()
 	_at_shop()
 	_pickups(delta)
+	_grenades(delta)
 	if walker.health <= 0.0:
 		_wasted()
 		return
@@ -583,6 +606,12 @@ func _pickups(_delta: float) -> void:
 		var gun: Node3D = p.node.get_node("gun")
 		gun.rotation.y += _delta * 2.0
 		gun.position.y = 1.2 + sin(Time.get_ticks_msec() / 350.0) * 0.12
+		if p.get("kind", "pistol") == "grenade":
+			if d < 1.4 and walker.vehicle == null and walker.stun <= 0.0 and grenades < MAX_GRENADES:
+				p.node.queue_free(); pickups.erase(p)
+				grenades = mini(MAX_GRENADES, grenades + GRENADES_EACH)
+				announce.emit("GRENADES", "%d in your pocket. G throws one where you aim." % grenades)
+			continue
 		if d < 1.4 and walker.vehicle == null and walker.stun <= 0.0 and (not armed or mag + rounds < PICKUP_ROUNDS):
 			p.node.queue_free(); pickups.erase(p)
 			armed = true; mag = PICKUP_ROUNDS; rounds = 0; _reload = 0.0
@@ -601,9 +630,11 @@ func _place_pickup(from: Vector3) -> void:
 			continue
 		if pickups.any(func(q): return q.pos.distance_to(p) < 30.0):
 			continue
+		var kind := "grenade" if _rng.randf() < 0.35 else "pistol"
+		var col: Color = GREEN if kind == "grenade" else ORANGE
 		var n := Node3D.new()
 		var ring_m := StandardMaterial3D.new()
-		ring_m.albedo_color = Color(ORANGE.r, ORANGE.g, ORANGE.b, 0.8)
+		ring_m.albedo_color = Color(col.r, col.g, col.b, 0.8)
 		ring_m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		ring_m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		var ring := TorusMesh.new(); ring.inner_radius = 0.75; ring.outer_radius = 0.9; ring.rings = 24; ring.ring_segments = 6
@@ -612,18 +643,92 @@ func _place_pickup(from: Vector3) -> void:
 		n.add_child(rmi)
 		# A pistol at two and a half times life size, so it reads from afar: grip and slide.
 		var gun := Node3D.new(); gun.name = "gun"
-		var gm := StandardMaterial3D.new(); gm.albedo_color = Color("26282c"); gm.metallic = 0.6; gm.roughness = 0.35
-		gm.emission_enabled = true; gm.emission = ORANGE; gm.emission_energy_multiplier = 0.9
-		for part in [[Vector3(0.09, 0.14, 0.42), Vector3(0, 0.08, 0)], [Vector3(0.08, 0.26, 0.12), Vector3(0, -0.08, 0.13)]]:
-			var b := BoxMesh.new(); b.size = part[0]
-			var mi := MeshInstance3D.new(); mi.mesh = b; mi.material_override = gm; mi.position = part[1]
-			gun.add_child(mi)
-		gun.scale = Vector3.ONE * 2.6
+		if kind == "grenade":
+			gun.add_child(_grenade_mesh(true))
+			gun.scale = Vector3.ONE * 3.0
+		else:
+			var gm := StandardMaterial3D.new(); gm.albedo_color = Color("26282c"); gm.metallic = 0.6; gm.roughness = 0.35
+			gm.emission_enabled = true; gm.emission = ORANGE; gm.emission_energy_multiplier = 0.9
+			for part in [[Vector3(0.09, 0.14, 0.42), Vector3(0, 0.08, 0)], [Vector3(0.08, 0.26, 0.12), Vector3(0, -0.08, 0.13)]]:
+				var b := BoxMesh.new(); b.size = part[0]
+				var mi := MeshInstance3D.new(); mi.mesh = b; mi.material_override = gm; mi.position = part[1]
+				gun.add_child(mi)
+			gun.scale = Vector3.ONE * 2.6
 		n.add_child(gun)
 		n.position = p
 		add_child(n)
-		pickups.append({"pos": p, "node": n})
+		pickups.append({"pos": p, "node": n, "kind": kind})
 		return
+
+
+# ---- grenades ---------------------------------------------------------------------------------
+
+## A grenade, olive with a lever (glowing green when it lies about to be picked up).
+func _grenade_mesh(glow := false) -> Node3D:
+	var n := Node3D.new()
+	var m := StandardMaterial3D.new(); m.albedo_color = Color("4a5a2e"); m.roughness = 0.7
+	if glow:
+		m.emission_enabled = true; m.emission = GREEN; m.emission_energy_multiplier = 0.6
+	var body := SphereMesh.new(); body.radius = 0.05; body.height = 0.11; body.radial_segments = 10; body.rings = 5
+	var mi := MeshInstance3D.new(); mi.mesh = body; mi.material_override = m
+	n.add_child(mi)
+	var lever := BoxMesh.new(); lever.size = Vector3(0.015, 0.07, 0.02)
+	var lm := StandardMaterial3D.new(); lm.albedo_color = Color(0.55, 0.55, 0.57); lm.metallic = 0.6
+	var li := MeshInstance3D.new(); li.mesh = lever; li.material_override = lm; li.position = Vector3(0.04, 0.045, 0)
+	n.add_child(li)
+	return n
+
+
+## G: throw one where you aim. It bounces, and goes off GRENADE_FUSE later.
+func throw_grenade() -> void:
+	if grenades <= 0 or walker.vehicle != null or walker.stun > 0.0:
+		return
+	grenades -= 1
+	var cam: Camera3D = walker.cam
+	var dir := -cam.global_transform.basis.z
+	var right := Vector3(cos(walker.cam_yaw), 0, -sin(walker.cam_yaw))
+	walker.heading = walker.cam_yaw
+	aim_t = 0.0
+	var b := RigidBody3D.new()
+	b.mass = 0.4
+	b.collision_layer = 0
+	b.collision_mask = 1 | 2 | 4 | 8                     # walls, the street, traffic, your car
+	b.continuous_cd = true
+	b.contact_monitor = true
+	b.max_contacts_reported = 2
+	var pm := PhysicsMaterial.new(); pm.bounce = 0.35; pm.friction = 0.8
+	b.physics_material_override = pm
+	b.angular_damp = 1.0
+	var cs := CollisionShape3D.new(); var sp := SphereShape3D.new(); sp.radius = 0.055
+	cs.shape = sp
+	b.add_child(cs)
+	b.add_child(_grenade_mesh())
+	add_child(b)
+	b.global_position = walker.global_position + Vector3(0, 1.55, 0) + right * 0.25 + dir * 0.4
+	b.linear_velocity = dir * 14.0 + Vector3.UP * 3.5
+	b.angular_velocity = Vector3(_rng.randf_range(-8, 8), _rng.randf_range(-8, 8), _rng.randf_range(-8, 8))
+	var g := {"body": b, "fuse": GRENADE_FUSE, "clink": 0.0}
+	b.body_entered.connect(func(_other):
+		if g.clink <= 0.0 and sfx:
+			sfx.play("clink", b.global_position)
+			g.clink = 0.15)
+	thrown.append(g)
+	if sfx: sfx.play("pin", null, "PlayerWeapon")
+
+
+func _grenades(delta: float) -> void:
+	for g in thrown.duplicate():
+		var b: RigidBody3D = g.body
+		g.clink -= delta
+		g.fuse -= delta
+		if not is_instance_valid(b):
+			thrown.erase(g); continue
+		if g.fuse <= 0.0:
+			thrown.erase(g)
+			var at := b.global_position
+			b.queue_free()
+			if explosions:
+				explosions.explode("he", at, GRENADE_SIZE, true)
 
 
 # ---- the taser -------------------------------------------------------------------------
@@ -664,6 +769,7 @@ func _wasted() -> void:
 	var bill: int = mini(HOSPITAL, mission.money)
 	mission.money -= bill
 	armed = false; mag = 0; rounds = 0
+	grenades = 0
 	stars = 0
 	_arrest = 0.0
 	state = "shop"
@@ -686,6 +792,7 @@ func _busted() -> void:
 	var fine: int = mini(FINE, mission.money)
 	mission.money -= fine
 	armed = false; mag = 0; rounds = 0
+	grenades = 0
 	stars = 0
 	_arrest = 0.0
 	state = "shop"

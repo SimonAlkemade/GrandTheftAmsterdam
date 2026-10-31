@@ -9,19 +9,30 @@ extends Node
 ## street that answers with a slap-back echo).
 ##     sfx.play("stone", hit_point)          # in the world, on the Impacts bus
 ##     sfx.play("transient", null, "PlayerWeapon")
+## Explosions (§9) have their own layers, played far (on the Explosions bus,
+## heard a long way off), fires and jets loop (play_loop), and a blast close
+## by leaves you half deaf for a few seconds (deafen: a low-pass over
+## everything, opening up again, and a ringing tone).
 
 const RATE := 22050
 const VARIANTS := 3
 const VOICES_3D := 16
 const VOICES_2D := 10
-const BUSES := ["PlayerWeapon", "Impacts", "UI"]
+const VOICES_FAR := 8           # explosion layers: heard from far off
+const BUSES := ["PlayerWeapon", "Impacts", "Explosions", "UI"]
 # name -> [gain dB, pitch jitter]: the pistol (§6.1) and what bullets hit (§7)
 const MIX := {
 	"transient": [0.0, 0.03], "body": [-2.0, 0.03], "mech": [-10.0, 0.05], "lfe": [-5.0, 0.0],
 	"tail_open": [-9.0, 0.03], "tail_street": [-8.0, 0.03], "shell": [-14.0, 0.05], "dry": [-6.0, 0.05],
 	"stone": [-3.0, 0.03], "metal": [-5.0, 0.03], "flesh": [-1.0, 0.03], "water": [-5.0, 0.03],
 	"ricochet": [-9.0, 0.05], "hit_tick": [-8.0, 0.0], "taser": [-6.0, 0.03],
+	# explosions (§9.3-9.5) and grenades
+	"he_crack": [2.0, 0.03], "he_boom": [0.0, 0.03], "sub_thump": [-2.0, 0.0], "debris_rain": [-8.0, 0.05],
+	"gas_whump": [-1.0, 0.03], "air_rush": [-6.0, 0.03], "gas_hiss": [-10.0, 0.03],
+	"fuel_pop": [-4.0, 0.04], "whoomf": [0.0, 0.03], "roar": [-5.0, 0.03], "fire_crackle": [-9.0, 0.03],
+	"rumble": [-2.0, 0.03], "tinnitus": [-18.0, 0.0], "pin": [-10.0, 0.04], "clink": [-10.0, 0.06],
 }
+const LOOPS := ["gas_hiss", "fire_crackle"]
 
 var bank := {}                   # name -> [AudioStreamWAV, ...]
 var _last := {}                  # name -> the last two variants played
@@ -29,6 +40,11 @@ var _p3: Array[AudioStreamPlayer3D] = []
 var _p2: Array[AudioStreamPlayer] = []
 var _n3 := 0
 var _n2 := 0
+var _pf: Array[AudioStreamPlayer3D] = []
+var _nf := 0
+var deaf := 0.0                  # 0..1: how deaf a blast left you (the low-pass)
+var _deaf_secs := 3.0
+var _lowpass: AudioEffectLowPassFilter
 var _rng := RandomNumberGenerator.new()
 
 
@@ -45,21 +61,69 @@ func _ready() -> void:
 	for i in VOICES_2D:
 		var p := AudioStreamPlayer.new()
 		add_child(p); _p2.append(p)
+	for i in VOICES_FAR:
+		var p := AudioStreamPlayer3D.new()
+		p.unit_size = 40.0
+		p.max_distance = 2500.0
+		p.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_DISTANCE
+		p.panning_strength = 0.6
+		add_child(p); _pf.append(p)
+
+
+func _process(delta: float) -> void:
+	# A blast's deafness wearing off: the low-pass opens up again.
+	if deaf > 0.0:
+		deaf = maxf(0.0, deaf - delta / _deaf_secs)
+	if _lowpass:
+		_lowpass.cutoff_hz = lerpf(20000.0, 900.0, deaf * deaf)
+
+
+## A blast close by: `strength` (0..1) of deafness, over `secs` seconds, and
+## a ringing in the ears.
+func deafen(strength: float, secs: float) -> void:
+	if strength > deaf:
+		deaf = clampf(strength, 0.0, 1.0)
+		_deaf_secs = secs
+		play("tinnitus", null, "UI", lerpf(-12.0, 0.0, deaf))
+
+
+## A looping sound (a fire, a gas jet) at `at` for `secs`, fading out at the end.
+func play_loop(name: String, at: Vector3, secs: float, gain_db := 0.0) -> AudioStreamPlayer3D:
+	if not bank.has(name) or not is_inside_tree():
+		return null
+	var p := AudioStreamPlayer3D.new()
+	p.stream = bank[name][pick(name)]
+	p.volume_db = MIX[name][0] + gain_db
+	p.unit_size = 10.0; p.max_distance = 200.0
+	p.bus = "Explosions"
+	add_child(p)
+	p.global_position = at
+	p.play()
+	var tw := p.create_tween()
+	tw.tween_interval(maxf(0.0, secs - 2.0))
+	tw.tween_property(p, "volume_db", -60.0, 2.0)
+	tw.tween_callback(p.queue_free)
+	return p
 
 
 ## Play `name`: in the world at `at` (a Vector3), or straight to your ears
 ## (null). `delay` seconds later if given.
-func play(name: String, at = null, bus := "Impacts", gain_db := 0.0, delay := 0.0) -> void:
+func play(name: String, at = null, bus := "Impacts", gain_db := 0.0, delay := 0.0, pitch_by := 1.0) -> void:
 	if not bank.has(name):
 		return
 	if delay > 0.0 and is_inside_tree():
-		get_tree().create_timer(delay).timeout.connect(play.bind(name, at, bus, gain_db, 0.0))
+		get_tree().create_timer(delay).timeout.connect(play.bind(name, at, bus, gain_db, 0.0, pitch_by))
 		return
 	var v := pick(name)
 	var mix: Array = MIX.get(name, [0.0, 0.03])
 	var vol: float = mix[0] + gain_db + _rng.randf_range(-1.5, 1.5)
-	var pitch: float = 1.0 + _rng.randf_range(-mix[1], mix[1])
-	if at != null:
+	var pitch: float = (1.0 + _rng.randf_range(-mix[1], mix[1])) * pitch_by
+	if at != null and bus == "Explosions":
+		var p := _pf[_nf]; _nf = (_nf + 1) % VOICES_FAR
+		p.stream = bank[name][v]; p.volume_db = vol; p.pitch_scale = pitch; p.bus = bus
+		p.global_position = at
+		p.play()
+	elif at != null:
 		var p := _p3[_n3]; _n3 = (_n3 + 1) % VOICES_3D     # (the oldest voice gives way)
 		p.stream = bank[name][v]; p.volume_db = vol; p.pitch_scale = pitch; p.bus = bus
 		p.global_position = at
@@ -86,6 +150,14 @@ func pick(name: String) -> int:
 
 
 func _buses() -> void:
+	var master := AudioServer.get_bus_index("Master")
+	for k in AudioServer.get_bus_effect_count(master):
+		if AudioServer.get_bus_effect(master, k) is AudioEffectLowPassFilter:
+			_lowpass = AudioServer.get_bus_effect(master, k)
+	if _lowpass == null:                        # the deafness after a blast (§10.3)
+		_lowpass = AudioEffectLowPassFilter.new()
+		_lowpass.cutoff_hz = 20000.0
+		AudioServer.add_bus_effect(master, _lowpass)
 	for b in BUSES:
 		if AudioServer.get_bus_index(b) != -1:
 			continue
@@ -93,6 +165,10 @@ func _buses() -> void:
 		var i := AudioServer.bus_count - 1
 		AudioServer.set_bus_name(i, b)
 		AudioServer.set_bus_send(i, "Master")
+		if b == "Explosions":                   # big and loud: kept from clipping
+			var c := AudioEffectCompressor.new()
+			c.threshold = -12.0; c.ratio = 4.0; c.attack_us = 2000.0; c.release_ms = 300.0
+			AudioServer.add_bus_effect(i, c)
 		if b == "PlayerWeapon":                 # a touch of tape-style saturation (§11)
 			var d := AudioEffectDistortion.new()
 			d.mode = AudioEffectDistortion.MODE_CLIP
@@ -108,7 +184,8 @@ func build() -> void:
 		var list := []
 		for v in VARIANTS:
 			var seed := hash(name) + v * 7919
-			list.append(_wav(_make(name, seed)))
+			var w := _wav(_make(name, seed))
+			list.append(_loop(w) if name in LOOPS else w)
 		bank[name] = list
 
 
@@ -155,6 +232,42 @@ func _make(name: String, seed: int) -> PackedFloat32Array:
 		"taser":                          # a crackling buzz
 			var z := _mix(_sat(_gain(_sine(0.7, j.call(62.0)), 4.0), 1.0), _gate(_hp(_noise(0.7, r), 1800.0), r), 0.7)
 			return _decay(z, 0.35)
+		"he_crack":                       # the crack: sharp, broadband, the loudest thing
+			return _sat(_gain(_decay(_hp(_noise(0.06, r), j.call(700.0)), 0.012), 2.0), 2.0)
+		"he_boom":                        # the boom: 40-120 Hz body, half a second
+			var b := _mix(_decay(_lp(_noise(1.0, r), j.call(220.0)), 0.28), _decay(_sweep(1.0, j.call(75.0), 38.0), 0.32), 0.9)
+			return _sat(_gain(b, 2.5), 1.8)
+		"sub_thump":                      # what your chest feels
+			return _decay(_sweep(0.7, j.call(48.0), 26.0), 0.2)
+		"debris_rain":                    # gravel and bits pattering down
+			var d := _gate(_hp(_noise(2.6, r), 1500.0), r)
+			return _attack(_decay(_lp(d, 5000.0), 0.9), 0.3)
+		"gas_whump":                      # a soft, low WHUMP, not a crack
+			return _attack(_decay(_mix(_lp(_noise(1.1, r), j.call(160.0)), _sine(1.1, j.call(55.0)), 0.6), 0.3), 0.03)
+		"air_rush":                       # the cloud catching: an inward rush, cut off
+			var a := _lp(_noise(0.25, r), 1200.0)
+			for i in a.size(): a[i] *= pow(float(i) / a.size(), 2.0)
+			return a
+		"gas_hiss":                       # a burning jet (loops)
+			return _gain(_hp(_noise(1.0, r), j.call(2200.0)), 0.6)
+		"fuel_pop":                       # the tank giving way
+			return _mix(_click(0.15, 0.0, r), _decay(_lp(_noise(0.15, r), 1500.0), 0.03), 0.8)
+		"whoomf":                         # the fireball: rich, slow attack, long body
+			var w := _mix(_decay(_lp(_noise(1.4, r), j.call(420.0)), 0.42), _decay(_sweep(1.4, j.call(95.0), 48.0), 0.38), 0.8)
+			return _sat(_attack(w, 0.06), 1.5)
+		"roar":                           # the fireball burning
+			var o := _mix(_lp(_noise(2.2, r), j.call(300.0)), _gate(_hp(_noise(2.2, r), 2500.0), r), 0.15)
+			return _attack(_decay(o, 0.9), 0.2)
+		"fire_crackle":                   # a fire burning on (loops)
+			return _mix(_gain(_lp(_noise(2.0, r), 220.0), 0.6), _gate(_decay(_hp(_noise(2.0, r), 3000.0), 99.0), r), 0.3)
+		"rumble":                         # far off: only the low end arrives
+			return _attack(_decay(_lp(_noise(3.0, r), j.call(90.0)), 1.1), 0.25)
+		"tinnitus":                       # the ringing after a blast
+			return _attack(_decay(_sine(3.0, j.call(3500.0)), 1.0), 0.05)
+		"pin":                            # a grenade's pin and lever
+			return _mix(_mix(_click(0.2, 0.0, r), _click(0.2, j.call(0.08), r), 0.8), _delay(_decay(_sine(0.1, j.call(4100.0)), 0.02), 0.08), 0.3)
+		"clink":                          # a grenade bouncing on the stones
+			return _mix(_decay(_sine(0.15, j.call(2900.0)), 0.025), _decay(_hp(_noise(0.15, r), 3000.0), 0.004), 0.6)
 	return PackedFloat32Array([0.0])
 
 
@@ -267,4 +380,11 @@ func _wav(a: PackedFloat32Array) -> AudioStreamWAV:
 	w.mix_rate = RATE
 	w.stereo = false
 	w.data = bytes
+	return w
+
+
+func _loop(w: AudioStreamWAV) -> AudioStreamWAV:
+	w.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	w.loop_begin = 0
+	w.loop_end = w.data.size() / 2
 	return w
