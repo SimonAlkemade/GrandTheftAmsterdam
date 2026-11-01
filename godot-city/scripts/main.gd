@@ -50,7 +50,9 @@ var walker
 var mission
 var sun: DirectionalLight3D
 var env: Environment
-var sky_mat: ProceduralSkyMaterial
+var sky_mat: ShaderMaterial          # shaders/sky.gdshader
+var sky_horizon := Color("a9bfd6")   # (the colours it was last given)
+var sky_top := Color("3d6fae")
 var hour := 15.5
 var weather
 var clock_on := true            # the clock runs (Weather.CLOCK s a game hour)
@@ -179,7 +181,8 @@ func _world() -> void:
 	env = Environment.new()
 	env.background_mode = Environment.BG_SKY
 	var sky := Sky.new()
-	sky_mat = ProceduralSkyMaterial.new()
+	sky_mat = ShaderMaterial.new()
+	sky_mat.shader = load("res://shaders/sky.gdshader")
 	sky.sky_material = sky_mat
 	# Clouds: soft noise over the sky, thin on a fine day, a lid in the rain.
 	var noise := FastNoiseLite.new()
@@ -194,7 +197,7 @@ func _world() -> void:
 	ramp.set_color(0, Color(1, 1, 1, 0)); ramp.set_color(1, Color(1, 1, 1, 1))
 	ramp.set_offset(0, 0.42); ramp.set_offset(1, 0.78)
 	cover.color_ramp = ramp
-	sky_mat.sky_cover = cover
+	sky_mat.set_shader_parameter("cover", cover)
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.ambient_light_energy = 0.9
@@ -274,21 +277,27 @@ func _set_hour(h: float) -> void:
 		sun.light_energy = lerpf(1.1, 0.2, night * 2.0)
 	sun.light_energy *= 1.0 - 0.72 * cloud      # behind the clouds: flat light...
 	sun.shadow_opacity = 1.0 - 0.7 * cloud      # ...and soft shadows
-	sky_mat.sky_top_color = Color("3d6fae").lerp(Color("737b84"), cloud * 0.9).lerp(Color("4a5058"), rain * 0.8).lerp(Color("0b1224"), night)
-	sky_mat.sky_horizon_color = Color("a9bfd6").lerp(Color("e8a070"), warm * (1.0 - night)).lerp(Color("a3a8ad"), cloud * 0.85) \
+	sky_top = Color("3d6fae").lerp(Color("737b84"), cloud * 0.9).lerp(Color("4a5058"), rain * 0.8).lerp(Color("0b1224"), night)
+	sky_horizon = Color("a9bfd6").lerp(Color("e8a070"), warm * (1.0 - night)).lerp(Color("a3a8ad"), cloud * 0.85) \
 		.lerp(Color("6f757b"), rain * 0.8).lerp(Color("2a3046"), night)
 	sun.light_energy *= 1.0 - 0.5 * rain        # (a dark day in the rain)
-	sky_mat.sky_cover_modulate = Color(0.92, 0.93, 0.95, 0.15 + cloud * 0.85).lerp(Color(0.12, 0.13, 0.17, 0.15 + cloud * 0.85), night)
-	sky_mat.ground_horizon_color = sky_mat.sky_horizon_color
-	sky_mat.ground_bottom_color = Color("40464c").lerp(Color("0c0e14"), night)
+	sky_mat.set_shader_parameter("top", sky_top)
+	sky_mat.set_shader_parameter("horizon", sky_horizon)
+	sky_mat.set_shader_parameter("ground_horizon", sky_horizon)
+	sky_mat.set_shader_parameter("ground_bottom", Color("40464c").lerp(Color("0c0e14"), night))
+	sky_mat.set_shader_parameter("cover_modulate", Color(0.92, 0.93, 0.95, 0.15 + cloud * 0.85).lerp(Color(0.12, 0.13, 0.17, 0.15 + cloud * 0.85), night))
+	sky_mat.set_shader_parameter("night", night)
+	sky_mat.set_shader_parameter("warm", warm * (1.0 - night))
+	var t := Time.get_ticks_msec() / 1000.0     # the clouds drift east-north-east with the wind
+	sky_mat.set_shader_parameter("drift", Vector2(t * 0.0022, t * 0.0009))
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.ambient_light_sky_contribution = 1.0 - night * 0.6
 	env.ambient_light_color = Color("3a4766")
 	env.ambient_light_energy = lerpf(0.6, 0.9, night) + cloud * 0.25 - rain * 0.2   # (the whole sky lights it instead)
-	env.fog_light_color = sky_mat.sky_horizon_color
+	env.fog_light_color = sky_horizon
 	env.glow_intensity = lerpf(0.4, 1.0, night)
 	mats.set_night(night)
-	mats.set_water(sky_mat.sky_horizon_color.lerp(sky_mat.sky_top_color, 0.35), rain)
+	mats.set_water(sky_horizon.lerp(sky_top, 0.35), rain)
 	if street_lights: street_lights.night = night
 	Models.set_night(night)
 	_fog()

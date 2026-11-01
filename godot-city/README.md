@@ -59,6 +59,12 @@ Boats under way leave a wake (`scripts/boat.gd`): foam fanning out flat on
 the water behind the stern and off the bow, more the faster, and spray
 thrown off the bow at full speed.
 
+The sky is a shader too (`shaders/sky.gdshader`): the gradient from the
+horizon up, the sun's glow, warm at sunrise and sunset, clouds drifting with
+the wind over the city (a few wisps on a fine day, a grey lid in the rain,
+their edges lit by the sun), and on a clear night stars and the moon, where
+the moonlight comes from.
+
 The weather changes by itself every two to six game hours, between sunshine
 (about half the time), clouds and rain (a quarter of the time, this being
 Amsterdam), and blends from one into the next over a minute or so. Clouds
@@ -327,6 +333,10 @@ grid of test streets:
   the minimap's blip, no route on the water), then bring them to the dock
   (a yellow beacon) within five minutes. The police on the quays see you at
   it: a star a crate, up to two.
+- **Mission 8, Bike race** (€350): on a bike (E by a parked one), a
+  countdown, then six checkpoints through the streets against the clock.
+  Each leg's time is its length along the streets at a brisk 6.5 m/s and
+  eight seconds over; every checkpoint passed puts the next leg's time on.
 
 ## Driving physics
 

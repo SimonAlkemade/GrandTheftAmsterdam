@@ -278,6 +278,35 @@ func _run() -> void:
 	_check(said.has("MISSION FAILED"), "the clock run out: failed")
 	w.vehicle = null
 	w.streamer.wet = Rect2()
+	# Mission 8, Bike race.
+	said.clear()
+	crime.stars = 0
+	w.global_position = Vector3(-150, 0, -150)
+	mission.start_job(8)
+	var rc = mission.job
+	_check(said.has(rc.title) and rc.phase == "bike", "Mission 8: %s, '%s'" % [rc.title, rc.objective()])
+	w.vehicle = {"kind": "bike"}                        # (on a bike)
+	await _step(1.5)
+	_check(rc.phase == "ready" and said.has("3") and said.has("2"), "on a bike: the countdown")
+	await _step(2.0)
+	_check(rc.phase == "race" and said.has("GO!") and mission.target != Vector3.INF and rc.clock() > 0.0,
+		"GO: the first checkpoint %.0f m off, %.0f s" % [mission.route_len, rc.clock()])
+	money = mission.money
+	for k in rc.CHECKPOINTS:
+		var before: float = rc.clock() if is_instance_valid(rc) and not rc.over else 0.0
+		w.global_position = mission.target
+		await _step(0.1)
+		if k == 0:
+			_check(rc.passed == 1 and rc.clock() > before + 10.0, "a checkpoint: time back on the clock (%.0f s)" % rc.clock())
+	_check(said.has("MISSION PASSED") and mission.money == money + 350, "all six: passed, +€350")
+	said.clear()
+	mission.start_job(8)
+	var rc2 = mission.job
+	await _step(3.5)
+	rc2._left = 0.05
+	await _step(0.2)
+	_check(said.has("MISSION FAILED"), "out of time: failed")
+	w.vehicle = null
 	# Past the last job: free roam.
 	mission.start_job(mission.FIRST_JOB + mission.JOBS.size())
 	_check(mission.state == "free" and said.has("ALL JOBS DONE"), "after the last job: free roam")
