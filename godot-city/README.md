@@ -73,6 +73,11 @@ People, cars, Cantas, buses and the pickups stand on a soft dark patch, the
 contact shadow the browser's renderer has no ambient occlusion for
 (`scripts/contact_shadow.gd`): without it they seemed to float on the stones.
 
+The picture is graded by the hour (the Environment's adjustments): a little
+richer and crisper by day, cooler and paler at night, washed out in the rain.
+Over it lies a soft vignette (`scripts/grade.gd`), which flashes red from the
+edges when you are hurt and pulses red while your health is low.
+
 The weather changes by itself every two to six game hours, between sunshine
 (about half the time), clouds and rain (a quarter of the time, this being
 Amsterdam), and blends from one into the next over a minute or so. Clouds
@@ -355,6 +360,11 @@ grid of test streets:
   for a hot one): on a Canta (or in any car), fetch three pizzas from the
   pizzeria and deliver them door to door. They cool from the moment you pick
   them up (the clock is how hot they still are); a cold one is sent back.
+- **Mission 11, Demolition derby** (€500): five cars in the streets round
+  you are marked with red arrows (red blips; the nearest is the minimap's).
+  Wreck them all within four minutes, any way you like: ram them, shoot
+  their tanks, a grenade, a Molotov. A marked car that gets away is swapped
+  for another.
 
 ## Driving physics
 

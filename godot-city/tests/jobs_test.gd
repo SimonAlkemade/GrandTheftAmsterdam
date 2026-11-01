@@ -363,6 +363,46 @@ func _run() -> void:
 	await _step(0.1)
 	_check(said.has("MISSION PASSED"), "the third: passed")
 	w.vehicle = null
+	# Mission 11, Demolition derby.
+	said.clear()
+	crime.stars = 0
+	w.global_position = Vector3(-50, 0, -50)
+	traffic.target.car = 14
+	traffic.focus = w.global_position
+	for i in 120:
+		traffic._process(1.0 / 60.0)
+		await process_frame
+	traffic.target.car = 0
+	var placed := 0
+	for v in traffic.vehicles:                          # (eight within reach, held still, 10 m apart)
+		if v.kind == "car" and not v.get("wrecked", false) and not v.get("police", false) and placed < 8 and not is_same(v, w.vehicle):
+			v.parked = true
+			v.pos = Vector2(w.global_position.x + 40.0 + placed * 10.0, w.global_position.z + 30.0)
+			v.parts[0][0].global_position = Vector3(v.pos.x, 0, v.pos.y)
+			placed += 1
+	print("derby: %d cars placed" % placed)
+	mission.start_job(11)
+	var db = mission.job
+	await _step(3.0)
+	_check(said.has(db.title) and db.marked.size() >= 3 and db.clock() > 200.0, "Mission 11: %d cars marked, %.0f s" % [db.marked.size(), db.clock()])
+	_check(mission.target != Vector3.INF and mission.route.is_empty(), "the nearest is the blip")
+	money = mission.money
+	var booms := 0
+	while is_instance_valid(db) and not db.over and booms < 12:
+		if db.marked.is_empty():
+			await _step(0.6); booms += 1; continue
+		var mk: Dictionary = db.marked[0]
+		ex._car_boom(mk.v)
+		await _step(0.1)
+		booms += 1
+	_check(said.has("MISSION PASSED") and mission.money == money + 500, "five wrecked: passed, +€500")
+	said.clear()
+	mission.start_job(11)
+	var db2 = mission.job
+	await _step(0.2)
+	db2._left = 0.05
+	await _step(0.2)
+	_check(said.has("MISSION FAILED"), "out of time: failed")
 	# Past the last job: free roam.
 	mission.start_job(mission.FIRST_JOB + mission.JOBS.size())
 	_check(mission.state == "free" and said.has("ALL JOBS DONE"), "after the last job: free roam")

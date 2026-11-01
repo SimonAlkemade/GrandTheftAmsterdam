@@ -30,6 +30,7 @@ const Explosions := preload("res://scripts/explosions.gd")
 const Crime := preload("res://scripts/crime.gd")
 const GasStations := preload("res://scripts/gas_stations.gd")
 const StreetLights := preload("res://scripts/street_lights.gd")
+const Grade := preload("res://scripts/grade.gd")
 const CrimeHud := preload("res://scripts/crime_hud.gd")
 
 var mats
@@ -43,6 +44,7 @@ var gun_fx
 var explosions
 var gas_stations
 var street_lights
+var grade
 var _boom_size := 0.5           # the map panel's test slider
 var _boomed := false
 var cam: Camera3D
@@ -152,6 +154,9 @@ func _ready() -> void:
 	street_lights = StreetLights.new()
 	add_child(street_lights)
 	street_lights.setup(streamer, traffic)
+	grade = Grade.new()
+	add_child(grade)
+	walker.hurt_by.connect(func(a): grade.hurt(a / walker.MAX_HEALTH))
 	walker.juice = juice; walker.gun_fx = gun_fx
 
 	_ui()
@@ -296,6 +301,12 @@ func _set_hour(h: float) -> void:
 	env.ambient_light_energy = lerpf(0.6, 0.9, night) + cloud * 0.25 - rain * 0.2   # (the whole sky lights it instead)
 	env.fog_light_color = sky_horizon
 	env.glow_intensity = lerpf(0.4, 1.0, night)
+	# Colour grading: a little richer and crisper by day, cooler and paler by
+	# night, washed out in the rain.
+	env.adjustment_enabled = true
+	env.adjustment_saturation = lerpf(1.14, 0.86, night) - rain * 0.14 - cloud * 0.05
+	env.adjustment_contrast = lerpf(1.06, 1.1, night)
+	env.adjustment_brightness = 1.0
 	mats.set_night(night)
 	mats.set_water(sky_horizon.lerp(sky_top, 0.35), rain)
 	if streamer.leaves_mat:                     # the trees: a breeze, a gale in the rain
@@ -607,6 +618,7 @@ func _mission_ui() -> void:
 		ui.cash.text = "€ %d\n%d parcel%s" % [mission.money, mission.delivered, "" if mission.delivered == 1 else "s"]
 	var ammo: String = crime.ammo_text()
 	ui.crime_text.visible = mode == "walk" and crime.state != "off"
+	grade.visible = mode == "walk"
 	ui.crime_text.text = crime.objective() + ("\n" + ammo if ammo != "" else "")
 	mission.show_route_3d(mode == "map")
 
@@ -727,6 +739,7 @@ func _process(delta: float) -> void:
 	if mode == "walk":
 		focus = walker.global_position
 		street_lights.focus = focus
+		grade.low = clampf((35.0 - walker.health) / 35.0, 0.0, 1.0)
 		if _damrak_boat.is_empty() and not streamer.tile_at(Vector3(DAMRAK_BOAT.x, 0, DAMRAK_BOAT.y)).is_empty():
 			_damrak_boat = boats.moor(DAMRAK_BOAT, Vector2(_walk_at.x, _walk_at.z))
 		streamer.radius = WALK_RADIUS

@@ -175,7 +175,7 @@ func _run() -> void:
 	var c1: Dictionary = cars[0]
 	var c2: Dictionary = cars[1]
 	c2.pos = c1.pos + Vector2(2.5, 0)                 # (parked right beside it)
-	c2.parts[0][0].position = Vector3(c2.pos.x, 0, c2.pos.y)
+	c2.parts[0][0].global_position = c1.parts[0][0].global_position + Vector3(2.5, 0, 0)
 	for i in 4: ex.damage(c1, 1, true)
 	_check(c1.has("smoke") and not c1.get("burning", false), "four hits: it smokes")
 	ex.damage(c1, 1, true); ex.damage(c1, 1, true)
@@ -184,6 +184,8 @@ func _run() -> void:
 	_check(c1.get("wrecked", false), "and goes up after %.1f s, a wreck" % Explosions.FUSE)
 	await _step(1.5)
 	_check(c2.get("wrecked", false), "taking the car beside it with it")
+	var flung: float = c1.parts[0][0].global_position.y
+	_check(flung < 25.0, "the wreck thrown up, not into orbit (%.1f m up)" % flung)
 	_check(crime.stars >= 2, "and you are wanted for it")
 	crime.stars = 0
 	# 5. A grenade.

@@ -562,7 +562,8 @@ func _blast(kind: String, at: Vector3, x: Dictionary, by_you: bool) -> void:
 		for v in traffic.vehicles.duplicate():
 			if not HP.has(v.kind):
 				continue
-			var d: float = v.pos.distance_to(flat)
+			var vn: Node3D = v.get("body", v.parts[0][0])       # (where it really is: `pos` is a point on its lane)
+			var d: float = Vector2(vn.global_position.x, vn.global_position.z).distance_to(flat) if is_instance_valid(vn) else v.pos.distance_to(flat)
 			if d > hurt:
 				continue
 			var f := 1.0 / (1.0 + pow(d / lethal, 2.0))
@@ -605,8 +606,11 @@ func _throw(v: Dictionary, at: Vector3, dv: float) -> void:
 		var away: Vector3 = (b as RigidBody3D).global_position - at; away.y = 0.0
 		away = away.normalized() if away.length() > 0.05 else Vector3.FORWARD
 		var rb: RigidBody3D = b
-		rb.apply_central_impulse((away * dv + Vector3.UP * dv * 0.8) * rb.mass)
-		rb.apply_torque_impulse(Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-1, 1), _rng.randf_range(-1, 1)) * rb.mass * dv * 0.6)
+		# Velocities, not impulses: a body made this very frame has no mass in
+		# the physics server yet, and an impulse times its mass sent it flying
+		# hundreds of metres.
+		rb.linear_velocity += away * dv + Vector3.UP * dv * 0.8
+		rb.angular_velocity += Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-1, 1), _rng.randf_range(-1, 1)) * minf(dv * 0.25, 3.0)
 
 
 # ---- burning cars ------------------------------------------------------------------------------

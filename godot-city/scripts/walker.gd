@@ -786,9 +786,13 @@ func _vehicle_segments() -> Array:
 	return out
 
 ## Harm: `amount` off your health.
+signal hurt_by(amount: float)    # (the screen's red flash: Grade)
+
+
 func hurt(amount: float) -> void:
 	health = maxf(0.0, health - amount)
 	_since_hurt = 0.0
+	hurt_by.emit(amount)
 
 
 ## Down you go, limp, thrown with `vel`, for `secs` seconds (a taser, a car).
