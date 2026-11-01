@@ -195,6 +195,9 @@ func _run() -> void:
 	# ...and failed by leaving the car.
 	said.clear()
 	w._get_out()
+	pc = c                                              # (the car to mark: 60 m off again)
+	pc.pos = Vector2(w.global_position.x + 60.0, w.global_position.z)
+	pc.parts[0][0].global_position = Vector3(pc.pos.x, 0, pc.pos.y)
 	mission.start_job(5)
 	var g2 = mission.job
 	await _step(1.2)
@@ -206,6 +209,42 @@ func _run() -> void:
 		w._get_out()
 		await _step(g2.LEAVE_GRACE + 0.5)
 	_check(said.has("MISSION FAILED"), "out of the car too long: failed")
+	# Mission 6, Taxi.
+	said.clear()
+	crime.stars = 0
+	if w.vehicle != null: w._get_out()
+	mission.start_job(6)
+	var tx = mission.job
+	_check(said.has(tx.title) and tx.phase == "car", "Mission 6: %s, '%s'" % [tx.title, tx.objective()])
+	var cab: Dictionary = {}
+	for v in traffic.vehicles:
+		if v.kind == "car" and not v.get("wrecked", false) and not v.get("police", false):
+			cab = v; break
+	w.global_position = Vector3(cab.pos.x + 1.5, 0, cab.pos.y)
+	w._get_in()
+	await _step(0.1)
+	_check(tx.phase == "hail", "in a car: '%s'" % tx.objective())
+	money = mission.money
+	var rides := 0
+	var fares: int = tx.FARES
+	var bonus: int = tx.reward
+	for k in fares:
+		var p := _ped(w.global_position + Vector3(0, 0, 50))
+		var waited := 0
+		while tx.fare.is_empty() and waited < 300:
+			await _step(1.0 / 60.0); waited += 1
+		if tx.fare.is_empty(): break
+		w.global_position = tx.fare.pos + Vector3(2.0, 0, 0)
+		await _step(0.1)
+		if tx.phase != "ride": break
+		if k == 0:
+			_check(not tx.fare.h.visible and tx.clock() > 0.0 and mission.target != Vector3.INF,
+				"a fare hails, gets in: '%s', %.0f s" % [tx.objective(), tx.clock()])
+		w.global_position = mission.target
+		await _step(0.1)
+		rides += 1
+	_check(rides == fares and said.has("MISSION PASSED") and mission.money > money + bonus,
+		"%d fares driven: passed, €%d earned" % [rides, mission.money - money])
 	# Past the last job: free roam.
 	mission.start_job(mission.FIRST_JOB + mission.JOBS.size())
 	_check(mission.state == "free" and said.has("ALL JOBS DONE"), "after the last job: free roam")

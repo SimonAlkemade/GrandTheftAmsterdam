@@ -36,6 +36,7 @@ const PINK := Color(1.0, 0.35, 0.62)
 const JOBS := [
 	preload("res://scripts/jobs/m04_burn.gd"),
 	preload("res://scripts/jobs/m05_getaway.gd"),
+	preload("res://scripts/jobs/m06_taxi.gd"),
 ]
 const FIRST_JOB := 4
 

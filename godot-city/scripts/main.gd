@@ -149,7 +149,7 @@ func _ready() -> void:
 	crime.caught.connect(mission.caught)
 	street_lights = StreetLights.new()
 	add_child(street_lights)
-	street_lights.setup(streamer)
+	street_lights.setup(streamer, traffic)
 	walker.juice = juice; walker.gun_fx = gun_fx
 
 	_ui()

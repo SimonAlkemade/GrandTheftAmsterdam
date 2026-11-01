@@ -51,6 +51,10 @@ ripples moving over them, the sky mirrored at a glancing angle, the sun
 glinting off them, dark at night with the lights sparkling in them, and rain
 rings spreading when it rains.
 
+At night cars, Cantas and buses throw their headlights on the street ahead
+and a red glow behind (`Models.beams`, glows lying on the ground), and the
+three nearest you, yours first, shine real spotlights down the street.
+
 The weather changes by itself every two to six game hours, between sunshine
 (about half the time), clouds and rain (a quarter of the time, this being
 Amsterdam), and blends from one into the next over a minute or so. Clouds
@@ -309,6 +313,11 @@ grid of test streets:
   it; E), drive it to the bank, where the crew piles in and the alarm gives
   you three stars, then get them to the garage within three minutes. The car
   wrecked, left for more than twelve seconds, or the clock run out: failed.
+- **Mission 6, Taxi** (€300 bonus, plus fares): in any car (or Canta),
+  pick up whoever is hailing you ("TAXI!" over their head) and drive them
+  where they want to go. A fare is €15 and a tip of €1 for every three
+  seconds to spare; too slow and that one pays nothing. Five fares and the
+  job is done.
 
 ## Driving physics
 

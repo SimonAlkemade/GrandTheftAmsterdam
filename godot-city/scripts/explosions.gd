@@ -651,7 +651,9 @@ func _car_boom(v: Dictionary) -> void:
 	explode("gasoline", at, CAR_SIZE[v.kind], v.get("by_you", false))
 	# Burnt out: black, still, cleared in a while.
 	for g in v.node.find_children("*", "GeometryInstance3D", true, false):
-		if g is MeshInstance3D:
+		if g is MeshInstance3D and (g.name == "beam" or g.name == "tailglow"):
+			g.visible = false                       # (its lights are out)
+		elif g is MeshInstance3D:
 			(g as MeshInstance3D).material_override = _solid_mat("charred", Color(0.07, 0.065, 0.06))
 	if v.has("smoke") and is_instance_valid(v.smoke): v.smoke.emitting = false
 	if v.has("flames") and is_instance_valid(v.flames):

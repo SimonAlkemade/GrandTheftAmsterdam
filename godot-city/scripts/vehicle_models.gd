@@ -5,6 +5,8 @@ extends RefCounted
 
 static var _mats := {}
 static var lights: Array[StandardMaterial3D] = []
+static var _beam: StandardMaterial3D        # headlights on the street at night (and tail lights, red)
+static var _tail: StandardMaterial3D
 
 
 static func mat(key: String, color: Color, rough := 0.5, metal := 0.0, glow := Color.BLACK) -> StandardMaterial3D:
@@ -43,6 +45,53 @@ static func wheels(parent: Node3D, half_track: float, axles: Array, r := 0.33) -
 static func set_night(night: float) -> void:
 	for m in lights:
 		m.emission_energy_multiplier = 0.4 + night * 3.5
+	_beam_mats()
+	var on := clampf((night - 0.15) / 0.6, 0.0, 1.0)
+	_beam.albedo_color = Color(1.0, 0.9, 0.7) * on * 0.5
+	_tail.albedo_color = Color(1.0, 0.08, 0.04) * on * 0.45
+	_beam.albedo_color.a = 1.0; _tail.albedo_color.a = 1.0
+
+
+## What the headlights throw on the street ahead at night, and the tail
+## lights' red glow behind: additive glows lying on the ground, no real light
+## (StreetLights-style: CarLights lights the nearest few for real). `front` and
+## `back` are the bumpers' z (the front is -z), `w` the width.
+static func beams(n: Node3D, front: float, back: float, w: float) -> void:
+	_beam_mats()
+	var q := PlaneMesh.new(); q.size = Vector2(w * 2.4, 10.0)
+	var f := MeshInstance3D.new(); f.mesh = q; f.material_override = _beam; f.name = "beam"
+	f.position = Vector3(0, 0.05, front - 4.6)
+	f.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	n.add_child(f)
+	if back != 0.0:
+		var r := PlaneMesh.new(); r.size = Vector2(w * 1.5, 2.6)
+		var t := MeshInstance3D.new(); t.mesh = r; t.material_override = _tail; t.name = "tailglow"
+		t.position = Vector3(0, 0.05, back + 1.0)
+		t.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		n.add_child(t)
+
+
+static func _beam_mats() -> void:
+	if _beam:
+		return
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 1, 1, 1)); g.set_color(1, Color(0, 0, 0, 1))
+	g.add_point(0.4, Color(0.45, 0.45, 0.45, 1))
+	var t := GradientTexture2D.new(); t.gradient = g
+	t.fill = GradientTexture2D.FILL_RADIAL
+	t.fill_from = Vector2(0.5, 0.5); t.fill_to = Vector2(0.5, 0.0)
+	t.width = 64; t.height = 64
+	for i in 2:
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		m.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+		m.albedo_texture = t
+		m.albedo_color = Color(0, 0, 0)
+		m.render_priority = 1
+		if i == 0: _beam = m
+		else: _tail = m
 
 
 static func car(color: Color) -> Node3D:
@@ -58,6 +107,7 @@ static func car(color: Color) -> Node3D:
 		box(n, Vector3(0.4, 0.13, 0.05), Vector3(x, 0.72, -2.09), mat("headlight", Color("fff6d8"), 0.3, 0.0, Color("fff2c0")))
 		box(n, Vector3(0.38, 0.13, 0.05), Vector3(x, 0.74, 2.09), mat("taillight", Color("8a0d0d"), 0.3, 0.0, Color("ff1a1a")))
 	wheels(n, 0.86, [-1.32, 1.32])
+	beams(n, -2.1, 2.1, 1.78)
 	return n
 
 
@@ -100,6 +150,7 @@ static func canta(color := Color("9e0b10")) -> Node3D:
 		var m := body.mesh.surface_get_material(i)
 		if m and m.resource_name.begins_with("paint"):
 			body.set_surface_override_material(i, mat("canta_%s" % color.to_html(false), color, 0.3, 0.2))
+	beams(n, -1.3, 1.3, 1.1)
 	return n
 
 
@@ -214,6 +265,7 @@ static func bus() -> Node3D:
 	for x in [-0.95, 0.95]:
 		box(n, Vector3(0.35, 0.18, 0.05), Vector3(x, 0.75, -6.02), mat("headlight", Color("fff6d8"), 0.3, 0.0, Color("fff2c0")))
 	wheels(n, 1.1, [-3.9, 3.2], 0.5)
+	beams(n, -6.05, 0.0, 2.55)
 	return n
 
 
