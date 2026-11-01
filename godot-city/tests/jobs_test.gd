@@ -337,6 +337,32 @@ func _run() -> void:
 	await _step(0.1)
 	_check(said.has("MISSION PASSED") and mission.money == money + 800 and not tg.has("scripted"), "passed, +€800; they are passers-by again")
 	w.health = w.MAX_HEALTH
+	# Mission 10, Pizza run.
+	said.clear()
+	crime.stars = 0
+	w.global_position = Vector3(-150, 0, -150)
+	mission.start_job(10)
+	var pz = mission.job
+	_check(said.has(pz.title) and pz.phase == "ride", "Mission 10: %s, '%s'" % [pz.title, pz.objective()])
+	w.vehicle = {"kind": "canta", "driver": true}          # (on the Canta)
+	await _step(1.1)
+	_check(pz.phase == "fetch" and mission.target != Vector3.INF, "'%s'" % pz.objective())
+	w.global_position = mission.target
+	await _step(0.1)
+	_check(pz.phase == "deliver" and pz.left == 3 and pz.clock() > 90.0, "three hot pizzas: '%s'" % pz.objective())
+	money = mission.money
+	w.global_position = mission.target
+	await _step(0.1)
+	_check(said.has("DELIVERED") and mission.money > money + 12, "the first, hot: paid with a tip (€%d)" % (mission.money - money))
+	pz.heat = 0.1
+	var m2: int = mission.money
+	w.global_position = mission.target
+	await _step(0.1)
+	_check(said.has("COLD!") and mission.money == m2, "a cold one: sent back, no pay")
+	w.global_position = mission.target
+	await _step(0.1)
+	_check(said.has("MISSION PASSED"), "the third: passed")
+	w.vehicle = null
 	# Past the last job: free roam.
 	mission.start_job(mission.FIRST_JOB + mission.JOBS.size())
 	_check(mission.state == "free" and said.has("ALL JOBS DONE"), "after the last job: free roam")

@@ -1,4 +1,5 @@
 extends Node3D
+const ContactShadow := preload("res://scripts/contact_shadow.gd")
 ## A jointed figure (hips, spine, head; shoulders and elbows; hips and knees)
 ## posed procedurally: idle, walk, run, jump, fall, swim, climb.
 ## Conventions: +x on a hip or shoulder swings the limb forward (towards -Z),
@@ -35,7 +36,11 @@ func _capsule(r: float, h: float) -> CapsuleMesh:
 	return c
 
 
+var shade: MeshInstance3D           # the soft shadow at their feet (kept flat on the ground)
+
+
 func build(top: Color, legs: Color, skin: Color, hair: Color, shoe: Color, jacket = null) -> void:
+	shade = ContactShadow.add(self, Vector2(1.0, 1.0), true)
 	var mt := _m(top); var ml := _m(legs); var ms := _m(skin); var mh := _m(hair); var mf := _m(shoe, 0.5)
 	var mj: StandardMaterial3D = _m(jacket) if jacket != null else mt
 	hips = _joint(self, Vector3(0, 0.93, 0))
@@ -84,6 +89,8 @@ func _lerp(n: Node3D, v: float, dt: float, k := 12.0) -> void:
 
 func animate(dt: float, state: String, speed: float) -> void:
 	t += dt
+	if shade and is_inside_tree():
+		ContactShadow.follow(shade, global_position)
 	match state:
 		"walk", "run":
 			var run := state == "run"

@@ -41,7 +41,8 @@ func _check(ok: bool, what: String) -> void:
 func _meshes(n: Node) -> Array:
 	var out := []
 	for c in n.get_children():
-		if c is MeshInstance3D: out.append([c, n, c.transform])
+		if c is MeshInstance3D and c.name != "contact_shadow":   # (the patch on the ground is not the figure)
+			out.append([c, n, c.transform])
 		out += _meshes(c)
 	return out
 

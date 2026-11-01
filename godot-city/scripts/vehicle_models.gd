@@ -5,6 +5,7 @@ extends RefCounted
 
 static var _mats := {}
 static var lights: Array[StandardMaterial3D] = []
+const ContactShadow := preload("res://scripts/contact_shadow.gd")
 static var _beam: StandardMaterial3D        # headlights on the street at night (and tail lights, red)
 static var _tail: StandardMaterial3D
 
@@ -108,6 +109,7 @@ static func car(color: Color) -> Node3D:
 		box(n, Vector3(0.38, 0.13, 0.05), Vector3(x, 0.74, 2.09), mat("taillight", Color("8a0d0d"), 0.3, 0.0, Color("ff1a1a")))
 	wheels(n, 0.86, [-1.32, 1.32])
 	beams(n, -2.1, 2.1, 1.78)
+	ContactShadow.add(n, Vector2(3.0, 5.8))
 	return n
 
 
@@ -151,6 +153,7 @@ static func canta(color := Color("9e0b10")) -> Node3D:
 		if m and m.resource_name.begins_with("paint"):
 			body.set_surface_override_material(i, mat("canta_%s" % color.to_html(false), color, 0.3, 0.2))
 	beams(n, -1.3, 1.3, 1.1)
+	ContactShadow.add(n, Vector2(2.0, 3.6))
 	return n
 
 
@@ -266,6 +269,7 @@ static func bus() -> Node3D:
 		box(n, Vector3(0.35, 0.18, 0.05), Vector3(x, 0.75, -6.02), mat("headlight", Color("fff6d8"), 0.3, 0.0, Color("fff2c0")))
 	wheels(n, 1.1, [-3.9, 3.2], 0.5)
 	beams(n, -6.05, 0.0, 2.55)
+	ContactShadow.add(n, Vector2(3.3, 12.8))
 	return n
 
 

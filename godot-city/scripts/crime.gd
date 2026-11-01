@@ -26,6 +26,7 @@ signal announce(title: String, sub: String)
 signal caught(how: String)       # WASTED or BUSTED
 
 const Human := preload("res://scripts/human.gd")
+const ContactShadow := preload("res://scripts/contact_shadow.gd")
 const Models := preload("res://scripts/vehicle_models.gd")
 const Ragdoll := preload("res://scripts/ragdoll.gd")
 
@@ -679,6 +680,7 @@ func _place_pickup(from: Vector3) -> void:
 				gun.add_child(mi)
 			gun.scale = Vector3.ONE * 2.6
 		n.add_child(gun)
+		ContactShadow.add(n, Vector2(1.3, 1.3))
 		n.position = p
 		add_child(n)
 		pickups.append({"pos": p, "node": n, "kind": kind})

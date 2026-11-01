@@ -69,6 +69,10 @@ The trees sway in the wind (`shaders/tree.gdshader` on their crowns): each
 on its own beat, the tops moving most, the leaves fluttering, a breeze on a
 fine day and a gale in the rain; their shadows sway with them.
 
+People, cars, Cantas, buses and the pickups stand on a soft dark patch, the
+contact shadow the browser's renderer has no ambient occlusion for
+(`scripts/contact_shadow.gd`): without it they seemed to float on the stones.
+
 The weather changes by itself every two to six game hours, between sunshine
 (about half the time), clouds and rain (a quarter of the time, this being
 Amsterdam), and blends from one into the next over a minute or so. Clouds
@@ -347,6 +351,10 @@ grid of test streets:
   shoot or hurt him and the guards come running with their fists (9 health a
   punch). Then lose the police. (They are ordinary pedestrians that the job
   moves: everything that works on people works on them.)
+- **Mission 10, Pizza run** (€250, plus €12 a pizza and a tip of up to €10
+  for a hot one): on a Canta (or in any car), fetch three pizzas from the
+  pizzeria and deliver them door to door. They cool from the moment you pick
+  them up (the clock is how hot they still are); a cold one is sent back.
 
 ## Driving physics
 
