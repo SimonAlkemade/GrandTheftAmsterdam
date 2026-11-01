@@ -142,6 +142,33 @@ the cars you drive climb it on their suspension, and lamps and benches on a
 bridge stand on its deck. Swimming under a bridge you climb out only at a
 quay, not up onto the bridge overhead.
 
+## The characters
+
+You are the man in the parka (`models/char_man.glb`), and one walker in six
+is the woman in red (`models/char_woman.glb`). Both came as static T-posed
+meshes (Tripo; the originals are in `assets-src/characters/` at the
+repository root) and are rigged by `blender/rig_character.py`: it fits a
+simple humanoid skeleton to the mesh (hips, spine, head, upper arms,
+forearms, hands, thighs, shins, feet: where the arms stick out, how wide the
+chest is, where the legs stand), welds the mesh and binds it with automatic
+weights (falling back to soft distance weights where Blender's bone heat
+finds no solution, as on the man's parka), lowers the arms to the sides as
+the rest pose, scales it (1.82 m and 1.70 m) and shrinks the texture to
+1024 px:
+
+    python blender/rig_character.py assets-src/characters/fashionable_man.glb godot-city/models/char_man.glb 1.82
+
+In the game (`scripts/skinned_person.gd`) the jointed figure is still built,
+invisibly, and everything keeps moving it as before (walking, running,
+jumping, swimming, aiming, driving, the ragdoll); every frame the model's
+bones copy its joints' rotations, and knocked down they follow the ragdoll's
+bodies. The pistol and the tulips sit in the model's hands. To swap in
+another character, rig its mesh the same way and point `YOU_MODEL` or
+`WOMAN_MODEL` in `scripts/walker.gd` at it. `tests/characters_test.gd`
+checks both models, the walk, the aim, the ragdoll and the walkers:
+
+    godot --headless --path godot-city --script tests/characters_test.gd
+
 ## Mission 1: parcel courier
 
 As soon as you are on your feet the job starts. A yellow circle (with a beam
@@ -612,6 +639,7 @@ another size: `python chunk_godot_tiles.py godot-city/data 375`.
 - `scripts/traffic.gd`, `scripts/vehicle_models.gd`: traffic
 - `scripts/vehicle_physics.gd`: suspension, engine, brakes and steering for what you drive
 - `scripts/walker.gd`, `scripts/human.gd`: the player and pedestrians
+- `scripts/skinned_person.gd`: a rigged model (you, the woman in red) moved by the figure's joints
 - `scripts/ragdoll.gd`: a person knocked over, gone limp
 - `scripts/weather.gd`: the clock, sunshine, clouds and rain, wet streets
 - `scripts/sfx.gd`, `scripts/gun_fx.gd`, `scripts/juice.gd`: the sounds (made in code), the pistol's

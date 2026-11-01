@@ -1,0 +1,37 @@
+[remap]
+
+importer="texture"
+type="CompressedTexture2D"
+uid="uid://c6onpkqkqf7lf"
+path="res://.godot/imported/char_man_fashionable_man_3d_model_basecolor.jpg-11b6a85ff096ff03d2b5ffa0e95e3b94.ctex"
+metadata={
+"vram_texture": false
+}
+generator_parameters={
+"md5": "de15ad876fd034c6562552639cab4825"
+}
+
+[deps]
+
+source_file="res://models/char_man_fashionable_man_3d_model_basecolor.jpg"
+dest_files=["res://.godot/imported/char_man_fashionable_man_3d_model_basecolor.jpg-11b6a85ff096ff03d2b5ffa0e95e3b94.ctex"]
+
+[params]
+
+compress/mode=1
+compress/high_quality=false
+compress/lossy_quality=0.8
+compress/hdr_compression=1
+compress/normal_map=0
+compress/channel_pack=0
+mipmaps/generate=true
+mipmaps/limit=-1
+roughness/mode=0
+roughness/src_normal=""
+process/fix_alpha_border=true
+process/premult_alpha=false
+process/normal_map_invert_y=false
+process/hdr_as_srgb=false
+process/hdr_clamp_exposure=false
+process/size_limit=0
+detect_3d/compress_to=1

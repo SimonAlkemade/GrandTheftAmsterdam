@@ -11,6 +11,10 @@ extends CharacterBody3D
 
 const Human := preload("res://scripts/human.gd")
 const Ragdoll := preload("res://scripts/ragdoll.gd")
+const SkinnedPerson := preload("res://scripts/skinned_person.gd")
+const YOU_MODEL := "res://models/char_man.glb"          # you: the man in the parka
+const WOMAN_MODEL := "res://models/char_woman.glb"      # one walker in WOMAN_EVERY
+const WOMAN_EVERY := 6
 const Models := preload("res://scripts/vehicle_models.gd")
 const VPhys := preload("res://scripts/vehicle_physics.gd")
 const TileBuilder := preload("res://scripts/tile_builder.gd")
@@ -79,9 +83,16 @@ func setup(s, camera: Camera3D) -> void:
 	# (whose wheels and box would otherwise meet you inside it) never sees you.
 	collision_layer = 16
 	collision_mask = VPhys.WALL_LAYER
-	body = Human.new()
-	body.callv("build", LOOK.duplicate())   # callv garbles a read-only (const) array
+	if ResourceLoader.exists(YOU_MODEL):
+		body = SkinnedPerson.new()
+		body.build_model(YOU_MODEL)
+	else:
+		body = Human.new()
+		body.callv("build", LOOK.duplicate())   # callv garbles a read-only (const) array
 	add_child(body)
+	# What you hold sits in your hands: the model's, or the figure's.
+	var grip_l: Node3D = body.grip_l if "grip_l" in body else body.el_l
+	var grip_r: Node3D = body.grip_r if "grip_r" in body else body.el_r
 	_parcel = MeshInstance3D.new()
 	var box := BoxMesh.new(); box.size = Vector3(0.42, 0.3, 0.34)
 	var card := StandardMaterial3D.new(); card.albedo_color = Color("b8874f"); card.roughness = 0.9
@@ -102,16 +113,21 @@ func setup(s, camera: Camera3D) -> void:
 		_bouquet.add_child(a); _bouquet.add_child(b)
 	_bouquet.position = Vector3(0, -0.34, -0.04)
 	_bouquet.rotation.x = PI                 # held stems down, the flowers up out of the fist
+	if grip_l != body.el_l:                  # (in the model's hand: along the hand, not the forearm)
+		_bouquet.position = Vector3(0, 0.05, 0)
+		_bouquet.rotation = Vector3.ZERO
 	_bouquet.visible = false
-	body.el_l.add_child(_bouquet)
+	grip_l.add_child(_bouquet)
 	# The pistol, in the right hand (along the forearm: aimed, it points ahead).
 	_gun = MeshInstance3D.new()
 	var gb := BoxMesh.new(); gb.size = Vector3(0.04, 0.2, 0.11)
 	var gm := StandardMaterial3D.new(); gm.albedo_color = Color("1c1d20"); gm.metallic = 0.6; gm.roughness = 0.4
 	_gun.mesh = gb; _gun.material_override = gm
 	_gun.position = Vector3(0, -0.36, -0.05)
+	if grip_r != body.el_r:
+		_gun.position = Vector3(0, 0.06, 0)
 	_gun.visible = false
-	body.el_r.add_child(_gun)
+	grip_r.add_child(_gun)
 	visible = false
 
 
@@ -126,8 +142,14 @@ func enter(at: Vector3, yaw: float) -> void:
 	cam.fov = 68.0
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	for i in 24:
-		var p := {"h": Human.new(), "pos": Vector3.ZERO, "heading": 0.0, "speed": 1.1 + _rng.randf() * 0.45, "turn": 0.0, "stag": 0.0}
-		p.h.random_look(_rng)
+		var p := {"h": null, "pos": Vector3.ZERO, "heading": 0.0, "speed": 1.1 + _rng.randf() * 0.45, "turn": 0.0, "stag": 0.0}
+		if i % WOMAN_EVERY == 0 and ResourceLoader.exists(WOMAN_MODEL):
+			p.h = SkinnedPerson.new()               # the woman in red
+			p.h.build_model(WOMAN_MODEL)
+			p.model = "woman"
+		else:
+			p.h = Human.new()
+			p.h.random_look(_rng)
 		get_parent().add_child(p.h)
 		_place(p, true)
 		peds.append(p)
