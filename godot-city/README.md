@@ -78,6 +78,9 @@ richer and crisper by day, cooler and paler at night, washed out in the rain.
 Over it lies a soft vignette (`scripts/grade.gd`), which flashes red from the
 edges when you are hurt and pulses red while your health is low.
 
+In the rain the drops land round you (`scripts/weather.gd`): little bursts
+of spray off the stones and rings spreading on the wet street.
+
 The weather changes by itself every two to six game hours, between sunshine
 (about half the time), clouds and rain (a quarter of the time, this being
 Amsterdam), and blends from one into the next over a minute or so. Clouds
@@ -365,6 +368,10 @@ grid of test streets:
   Wreck them all within four minutes, any way you like: ram them, shoot
   their tanks, a grenade, a Molotov. A marked car that gets away is swapped
   for another.
+- **Mission 12, Tram heist** (€450, and €280 in the bag): board any tram
+  and ride along for twenty seconds while the conductor counts the takings
+  (off too soon and the count starts over on the next one). Then grab the
+  bag, two stars, get off and 120 m away from that tram, and lose the police.
 
 ## Driving physics
 

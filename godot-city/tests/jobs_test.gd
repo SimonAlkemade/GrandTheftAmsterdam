@@ -403,6 +403,28 @@ func _run() -> void:
 	db2._left = 0.05
 	await _step(0.2)
 	_check(said.has("MISSION FAILED"), "out of time: failed")
+	# Mission 12, Tram heist.
+	said.clear()
+	crime.stars = 0
+	mission.start_job(12)
+	var th = mission.job
+	_check(said.has(th.title) and th.phase == "board", "Mission 12: %s, '%s'" % [th.title, th.objective()])
+	w.vehicle = {"kind": "tram", "pos": Vector2(w.global_position.x, w.global_position.z)}   # (on a tram)
+	await _step(0.2)
+	_check(th.phase == "ride" and th.clock() > 15.0, "aboard: the count, %.0f s" % th.clock())
+	w.vehicle = null
+	await _step(0.1)
+	_check(th.phase == "board" and said.has("YOU GOT OFF"), "off too soon: start over")
+	w.vehicle = {"kind": "tram", "pos": Vector2(w.global_position.x, w.global_position.z)}
+	await _step(0.2)
+	money = mission.money
+	th._count = 0.05
+	await _step(0.2)
+	_check(th.phase == "escape" and crime.stars >= 2 and mission.money == money + th.TAKINGS, "the bag: +€%d, %d stars" % [th.TAKINGS, crime.stars])
+	w.vehicle = null
+	crime.stars = 0
+	await _step(0.2)
+	_check(said.has("MISSION PASSED"), "off, away, the police lost: passed")
 	# Past the last job: free roam.
 	mission.start_job(mission.FIRST_JOB + mission.JOBS.size())
 	_check(mission.state == "free" and said.has("ALL JOBS DONE"), "after the last job: free roam")
