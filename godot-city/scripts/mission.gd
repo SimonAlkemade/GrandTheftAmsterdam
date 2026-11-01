@@ -43,6 +43,7 @@ const JOBS := [
 	preload("res://scripts/jobs/m10_pizza.gd"),
 	preload("res://scripts/jobs/m11_derby.gd"),
 	preload("res://scripts/jobs/m12_tram.gd"),
+	preload("res://scripts/jobs/m13_big_one.gd"),
 ]
 const FIRST_JOB := 4
 
@@ -123,6 +124,8 @@ func start_job(n: int) -> void:
 	if i < 0 or i >= JOBS.size():
 		state = "free"
 		announce.emit("ALL JOBS DONE", "€%d. Amsterdam is yours" % money)
+		if jobs_done > 0:                          # (played through, not jumped to: the credits)
+			add_child(load("res://scripts/credits.gd").new())
 		return
 	job_no = n
 	job = JOBS[i].new()

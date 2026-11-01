@@ -31,6 +31,7 @@ const Crime := preload("res://scripts/crime.gd")
 const GasStations := preload("res://scripts/gas_stations.gd")
 const StreetLights := preload("res://scripts/street_lights.gd")
 const Grade := preload("res://scripts/grade.gd")
+const Atmosphere := preload("res://scripts/atmosphere.gd")
 const CrimeHud := preload("res://scripts/crime_hud.gd")
 
 var mats
@@ -45,6 +46,7 @@ var explosions
 var gas_stations
 var street_lights
 var grade
+var atmosphere
 var _boom_size := 0.5           # the map panel's test slider
 var _boomed := false
 var cam: Camera3D
@@ -156,6 +158,8 @@ func _ready() -> void:
 	street_lights.setup(streamer, traffic)
 	grade = Grade.new()
 	add_child(grade)
+	atmosphere = Atmosphere.new()
+	add_child(atmosphere)
 	walker.hurt_by.connect(func(a): grade.hurt(a / walker.MAX_HEALTH))
 	walker.juice = juice; walker.gun_fx = gun_fx
 
@@ -309,6 +313,8 @@ func _set_hour(h: float) -> void:
 	env.adjustment_brightness = 1.0
 	mats.set_night(night)
 	mats.set_water(sky_horizon.lerp(sky_top, 0.35), rain)
+	if atmosphere:
+		atmosphere.set_hour(h, cloud, rain, sky_horizon.lerp(Color(0.85, 0.87, 0.9), 0.4))
 	if streamer.leaves_mat:                     # the trees: a breeze, a gale in the rain
 		streamer.leaves_mat.set_shader_parameter("wind", 0.25 + cloud * 0.25 + rain * 0.5)
 	if street_lights: street_lights.night = night
@@ -735,6 +741,8 @@ func _process(delta: float) -> void:
 				mission.start_job(int(args.mission))
 			crime.start()
 		return
+	var c3 := get_viewport().get_camera_3d()
+	if c3: atmosphere.focus = c3.global_position      # (mist and birds round wherever you look from)
 	var focus: Vector3
 	if mode == "walk":
 		focus = walker.global_position

@@ -425,6 +425,33 @@ func _run() -> void:
 	crime.stars = 0
 	await _step(0.2)
 	_check(said.has("MISSION PASSED"), "off, away, the police lost: passed")
+	# Mission 13, The big one, and after it the credits.
+	said.clear()
+	crime.stars = 0
+	crime.armed = false
+	crime.shop = Vector3(-120, 0, -120)
+	crime.shop_name = "the gun shop on Teststraat"
+	w.global_position = Vector3(-150, 0, -150)
+	mission.start_job(13)
+	var bg = mission.job
+	_check(said.has(bg.title) and bg.phase == "arm", "Mission 13: %s, '%s'" % [bg.title, bg.objective()])
+	crime.armed = true; crime.mag = 10
+	await _step(0.1)
+	_check(bg.phase == "rob" and mission.target.distance_to(crime.shop) < 0.1, "armed: '%s'" % bg.objective())
+	money = mission.money
+	w.global_position = crime.shop + Vector3(1, 0, 0)
+	await _step(0.1)
+	_check(bg.phase == "boat" and crime.stars == 5 and mission.money == money + bg.TAKE, "robbed: five stars, +€%d" % bg.TAKE)
+	w.vehicle = {"kind": "boat"}
+	await _step(0.1)
+	_check(bg.phase == "escape", "in a boat: '%s'" % bg.objective())
+	w.global_position = crime.shop + Vector3(450, 0, 0)
+	await _step(0.1)
+	_check(said.has("MISSION PASSED") and crime.stars == 0, "400 m over the water: they lost you, passed")
+	w.vehicle = null
+	await _step(5.5)
+	var rolled: bool = mission.get_children().any(func(c): return c is CanvasLayer)
+	_check(mission.state == "free" and said.has("ALL JOBS DONE") and rolled, "the last job done: free roam, and the credits roll")
 	# Past the last job: free roam.
 	mission.start_job(mission.FIRST_JOB + mission.JOBS.size())
 	_check(mission.state == "free" and said.has("ALL JOBS DONE"), "after the last job: free roam")

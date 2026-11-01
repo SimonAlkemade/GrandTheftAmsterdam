@@ -81,6 +81,11 @@ edges when you are hurt and pulses red while your health is low.
 In the rain the drops land round you (`scripts/weather.gd`): little bursts
 of spray off the stones and rings spreading on the wet street.
 
+The air (`scripts/atmosphere.gd`): mist lies on the canals at dawn and dusk
+(sheets of drifting noise just above the water and under the streets, so it
+shows only in the canals: `shaders/mist.gdshader`), thinner by day and in the
+rain thicker; and by day flocks of birds wheel over the rooftops.
+
 The weather changes by itself every two to six game hours, between sunshine
 (about half the time), clouds and rain (a quarter of the time, this being
 Amsterdam), and blends from one into the next over a minute or so. Clouds
@@ -372,6 +377,11 @@ grid of test streets:
   and ride along for twenty seconds while the conductor counts the takings
   (off too soon and the count starts over on the next one). Then grab the
   bag, two stars, get off and 120 m away from that tram, and lose the police.
+- **Mission 13, The big one** (€1,500, and €1,000 from the till): with a
+  pistol in your hand, rob the gun shop on the Dam. Five stars: run for a
+  boat and get 400 m away over the water, where the police lose you in the
+  canals. That is the last job: the credits roll (`scripts/credits.gd`), and
+  Amsterdam is yours.
 
 ## Driving physics
 
@@ -616,7 +626,10 @@ another size: `python chunk_godot_tiles.py godot-city/data 375`.
 - `models/bike_*.glb`: the bikes, modelled in Blender by `blender/make_bikes.py`
   (`pip install bpy`, then `python blender/make_bikes.py godot-city/models`)
 - `scripts/jobs/`: the jobs, Mission 4 on (`job.gd` is what each one fills in)
-- `scripts/street_lights.gd`: the real lights at the street lamps nearest you at night
+- `scripts/street_lights.gd`: the real lights at the street lamps (and the headlights) nearest you at night
+- `scripts/contact_shadow.gd`, `scripts/grade.gd`, `scripts/atmosphere.gd`, `scripts/credits.gd`: contact
+  shadows, the vignette, mist and birds, the credits
+- `shaders/`: the canals (`water`), the sky, the trees' crowns, the mist
 - `scripts/mission.gd`: the parcel courier: circles, routing (A* over the street graph), clock and pay
 - `scripts/minimap.gd`: the round minimap (built from the tile meshes)
 - `scripts/map_camera.gd`: map-app orbit camera with trackpad gestures
