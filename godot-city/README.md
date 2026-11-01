@@ -46,6 +46,11 @@ decals), and the six lamps nearest you are real lights
 (`scripts/street_lights.gd`), so the people, cars and walls round you catch
 their light as you pass.
 
+The canals are a shader of their own (`shaders/water.gdshader`): slow
+ripples moving over them, the sky mirrored at a glancing angle, the sun
+glinting off them, dark at night with the lights sparkling in them, and rain
+rings spreading when it rains.
+
 The weather changes by itself every two to six game hours, between sunshine
 (about half the time), clouds and rain (a quarter of the time, this being
 Amsterdam), and blends from one into the next over a minute or so. Clouds
@@ -300,6 +305,10 @@ grid of test streets:
   station gone, and two Molotovs come with the job. Get there, blow it up
   (Molotovs, or shoot its pumps) until the tank goes and the place is a
   ruin, then lose the police.
+- **Mission 5, Getaway** (€600): steal the marked car (parked, a circle round
+  it; E), drive it to the bank, where the crew piles in and the alarm gives
+  you three stars, then get them to the garage within three minutes. The car
+  wrecked, left for more than twelve seconds, or the clock run out: failed.
 
 ## Driving physics
 

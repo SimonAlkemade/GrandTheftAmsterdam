@@ -288,6 +288,7 @@ func _set_hour(h: float) -> void:
 	env.fog_light_color = sky_mat.sky_horizon_color
 	env.glow_intensity = lerpf(0.4, 1.0, night)
 	mats.set_night(night)
+	mats.set_water(sky_mat.sky_horizon_color.lerp(sky_mat.sky_top_color, 0.35), rain)
 	if street_lights: street_lights.night = night
 	Models.set_night(night)
 	_fog()

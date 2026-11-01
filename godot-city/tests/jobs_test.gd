@@ -155,6 +155,57 @@ func _run() -> void:
 	_check(said.has("MISSION FAILED") and mission.state == "job_wait" and mission.job_no == 4, "busted on the job: failed, tried again")
 	await _step(5.5)
 	_check(mission.state == "job" and mission.job != null and mission.job_no == 4, "five seconds later, Mission 4 again")
+	# Mission 5, Getaway.
+	said.clear()
+	crime.stars = 0
+	w.global_position = Vector3(-50, 0, -50)
+	traffic.target.car = 8
+	traffic.focus = w.global_position
+	for i in 90:
+		traffic._process(1.0 / 60.0)
+		await process_frame
+	traffic.target.car = 0
+	var parked: Array = traffic.vehicles.filter(func(v): return v.kind == "car" and not v.get("police", false))
+	_check(parked.size() >= 1, "cars about (%d)" % parked.size())
+	if parked.is_empty():
+		quit(1); return
+	var pc: Dictionary = parked[0]                      # (one 60 m off, so there is one to mark)
+	pc.pos = Vector2(w.global_position.x + 60.0, w.global_position.z)
+	pc.parts[0][0].position = Vector3(pc.pos.x, 0, pc.pos.y)
+	mission.start_job(5)
+	var g = mission.job
+	_check(said.has(g.title) and g.objective() == "Find a car to steal", "Mission 5: %s" % g.title)
+	await _step(1.2)
+	_check(g.phase == "steal" and g.car.get("parked", false) and mission.target != Vector3.INF, "a car marked to steal: '%s'" % g.objective())
+	if g.phase != "steal":
+		print("jobs test: %d failed" % (_fails + 1)); quit(1); return
+	var c: Dictionary = g.car
+	w.global_position = Vector3(c.pos.x + 1.5, 0, c.pos.y)
+	w._get_in()
+	_check(is_same(w.vehicle, c), "E: in the marked car")
+	await _step(0.2)
+	_check(g.phase == "bank" and g.objective().begins_with("Drive to the bank"), "'%s'" % g.objective())
+	w.global_position = mission.target
+	await _step(0.2)
+	_check(g.phase == "escape" and crime.stars >= 3 and g.clock() > 0.0, "the crew in, the alarm: %d stars, %.0f s on the clock" % [crime.stars, g.clock()])
+	money = mission.money
+	w.global_position = mission.target
+	await _step(0.2)
+	_check(said.has("MISSION PASSED") and crime.stars == 0 and mission.money == money + 600, "at the garage: passed, the stars gone, +€600")
+	# ...and failed by leaving the car.
+	said.clear()
+	w._get_out()
+	mission.start_job(5)
+	var g2 = mission.job
+	await _step(1.2)
+	if g2.phase == "steal":
+		var c2: Dictionary = g2.car
+		w.global_position = Vector3(c2.pos.x + 1.5, 0, c2.pos.y)
+		w._get_in()
+		await _step(0.2)
+		w._get_out()
+		await _step(g2.LEAVE_GRACE + 0.5)
+	_check(said.has("MISSION FAILED"), "out of the car too long: failed")
 	# Past the last job: free roam.
 	mission.start_job(mission.FIRST_JOB + mission.JOBS.size())
 	_check(mission.state == "free" and said.has("ALL JOBS DONE"), "after the last job: free roam")

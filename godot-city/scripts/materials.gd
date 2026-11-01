@@ -72,8 +72,8 @@ func build() -> void:
 	lib["tram"] = _plain(Color("5f6266"))
 	lib["rail"] = _plain(Color("55504a"))
 	lib["rails"] = _plain(Color("2a2c2e"), 0.4, 0.6)
-	lib["water"] = _plain(Color("1c3438"), 0.35, 0.0)   # dark and only a little glossy, like canal water
-	lib["water"].metallic_specular = 0.12              # it mirrors the sky far less than glass would
+	lib["water"] = ShaderMaterial.new()                # ripples, the sky mirrored, sun glints (shaders/water.gdshader)
+	lib["water"].shader = load("res://shaders/water.gdshader")
 	lib["quay"] = _plain(Color("cfc6b2"))
 	lib["bridge_side"] = _plain(Color("6d3b2c"))
 	lib["quay_wall"] = _textured("walk", 0.95)       # stone setts, standing on end
@@ -108,6 +108,7 @@ func set_night(night: float) -> void:
 	for m in glowing:
 		m.emission_energy_multiplier = night * (0.7 if m.has_meta("shop") else 1.4)
 	lib["lamp_glass"].emission_energy_multiplier = night * 4.0
+	lib["water"].set_shader_parameter("night", night)
 	lib["lamp_pool"].albedo_color = Color(1.0, 0.72, 0.38) * night * 0.7
 	lib["lamp_pool"].albedo_color.a = 1.0
 
@@ -124,3 +125,9 @@ func _pool_tex() -> Texture2D:
 	t.fill_from = Vector2(0.5, 0.5); t.fill_to = Vector2(0.5, 0.0)
 	t.width = 64; t.height = 64
 	return t
+
+
+## The sky the canals mirror, and how hard it rains on them.
+func set_water(sky: Color, rain: float) -> void:
+	lib["water"].set_shader_parameter("sky", sky)
+	lib["water"].set_shader_parameter("rain", rain)
