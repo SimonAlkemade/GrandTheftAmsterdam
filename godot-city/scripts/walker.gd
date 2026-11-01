@@ -450,7 +450,7 @@ func _get_in() -> void:
 		global_position = Vector3(b.global_position.x, 0.0, b.global_position.z)
 		heading = VPhys.heading(b)
 		if v.kind == "bike":             # you, on the saddle
-			v.rig.add_rider(null, LOOK)
+			v.rig.add_rider(null, LOOK, YOU_MODEL if ResourceLoader.exists(YOU_MODEL) else "")   # (you, the man)
 			v.rig.set_parked(false)
 	else:
 		v.rider = true

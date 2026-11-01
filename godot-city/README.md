@@ -162,7 +162,11 @@ In the game (`scripts/skinned_person.gd`) the jointed figure is still built,
 invisibly, and everything keeps moving it as before (walking, running,
 jumping, swimming, aiming, driving, the ragdoll); every frame the model's
 bones copy its joints' rotations, and knocked down they follow the ragdoll's
-bodies. The pistol and the tulips sit in the model's hands. To swap in
+bodies. The pistol and the tulips sit in the model's hands. The copy is made
+late in each frame, after whatever posed the joints, so the model shows them
+all: aiming, carrying, your hands on a boat's wheel, and on your bike (the
+bike's rider is the man too) your feet on the pedals and hands on the grips.
+In a car, Canta, bus or tram you are inside, as before (their windows are dark). To swap in
 another character, rig its mesh the same way and point `YOU_MODEL` or
 `WOMAN_MODEL` in `scripts/walker.gd` at it. `tests/characters_test.gd`
 checks both models, the walk, the aim, the ragdoll and the walkers:

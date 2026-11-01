@@ -4,7 +4,10 @@ extends "res://scripts/human.gd"
 ## the figure would: the figure is still built (its joints, invisibly), all the
 ## code that animates it, aims its arm, swims or climbs with it keeps doing
 ## so, and every frame the model's bones copy its joints' rotations. Knocked
-## down, the bones follow the ragdoll's bodies instead.
+## down, the bones follow the ragdoll's bodies instead. The copy is made late
+## in each frame (_process, after everything else), so whatever set the joints
+## (the walk, an aimed arm, hands on a boat's wheel, legs on a bike's pedals)
+## the model shows it.
 ##     var p := SkinnedPerson.new(); p.build_model("res://models/char_man.glb")
 ##
 ## The model and the figure stand alike at rest (arms down at the sides): the
@@ -53,6 +56,8 @@ func build_model(path: String) -> void:
 	_hips_rest = _rel(hips).origin
 	grip_r = _grip("hand.R")
 	grip_l = _grip("hand.L")
+	process_priority = 100                      # (after whoever poses the joints this frame)
+	_pose()
 
 
 func _grip(bone: String) -> BoneAttachment3D:
@@ -60,12 +65,6 @@ func _grip(bone: String) -> BoneAttachment3D:
 	a.bone_name = bone
 	skel.add_child(a)
 	return a
-
-
-func animate(dt: float, state: String, speed: float) -> void:
-	super.animate(dt, state, speed)
-	if _rag == null:
-		_pose()
 
 
 ## Knocked down (`rag` the Ragdoll) or back on their feet (null).
@@ -76,7 +75,7 @@ func ragdolled(rag) -> void:
 
 
 func _process(_delta: float) -> void:
-	if _rag != null and is_instance_valid(_rag):
+	if is_visible_in_tree():
 		_pose()
 
 

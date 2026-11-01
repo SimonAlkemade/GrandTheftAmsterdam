@@ -4,6 +4,7 @@ extends Node3D
 ## Forward is -Z; the origin is on the ground between the wheels.
 
 const Human := preload("res://scripts/human.gd")
+const SkinnedPerson := preload("res://scripts/skinned_person.gd")
 const WHEEL_R := 0.355
 const GEAR := 2.6                         # wheel turns per crank turn
 const SEAT := Vector3(0.0, 0.09, 0.24)    # where the rider's origin sits on the bike
@@ -53,12 +54,19 @@ func build(kind: String, color: Color, detail := "") -> void:
 	set_parked(false)
 
 
-## A rider: random, or with the given look ([top, legs, skin, hair, shoe, jacket]).
-func add_rider(rng: RandomNumberGenerator = null, look: Array = []) -> void:
+## A rider: random, or with the given look ([top, legs, skin, hair, shoe, jacket]),
+## or a rigged character `model` (you: SkinnedPerson, posed the same way).
+func add_rider(rng: RandomNumberGenerator = null, look: Array = [], model := "") -> void:
 	if rider:
 		rider.queue_free()
-	rider = Human.new()
-	if look.size():
+	if model != "":
+		rider = SkinnedPerson.new()
+		rider.build_model(model)
+	else:
+		rider = Human.new()
+	if model != "":
+		pass
+	elif look.size():
 		rider.callv("build", look.duplicate())   # callv garbles a read-only (const) array
 	else:
 		rider.random_look(rng)
