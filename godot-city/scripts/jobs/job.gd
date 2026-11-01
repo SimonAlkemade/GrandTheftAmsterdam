@@ -19,6 +19,7 @@ var m                         # Mission
 var title := "A JOB"
 var briefing := ""
 var reward := 100
+var routed := true            # a route along the streets to its target (not for one on the water)
 var over := false
 
 

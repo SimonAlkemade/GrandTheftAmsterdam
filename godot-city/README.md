@@ -55,6 +55,10 @@ At night cars, Cantas and buses throw their headlights on the street ahead
 and a red glow behind (`Models.beams`, glows lying on the ground), and the
 three nearest you, yours first, shine real spotlights down the street.
 
+Boats under way leave a wake (`scripts/boat.gd`): foam fanning out flat on
+the water behind the stern and off the bow, more the faster, and spray
+thrown off the bow at full speed.
+
 The weather changes by itself every two to six game hours, between sunshine
 (about half the time), clouds and rain (a quarter of the time, this being
 Amsterdam), and blends from one into the next over a minute or so. Clouds
@@ -318,6 +322,11 @@ grid of test streets:
   where they want to go. A fare is €15 and a tip of €1 for every three
   seconds to spare; too slow and that one pays nothing. Five fares and the
   job is done.
+- **Mission 7, Canal run** (€700): take a boat and fish three crates of
+  contraband out of the canals (bobbing under orange beacons; the nearest is
+  the minimap's blip, no route on the water), then bring them to the dock
+  (a yellow beacon) within five minutes. The police on the quays see you at
+  it: a star a crate, up to two.
 
 ## Driving physics
 

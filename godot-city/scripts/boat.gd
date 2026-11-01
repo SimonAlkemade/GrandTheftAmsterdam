@@ -8,6 +8,9 @@ extends RigidBody3D
 ## when you let go and slides out in a turn. The motor pushes at the stern and
 ## A/D swing its thrust like an outboard, so it steers best under power; the
 ## rudder bites a little when it only drifts. The model faces -Z.
+##
+## Under way it leaves a wake: foam spreading out flat on the water behind the
+## stern and from the bow, and spray off the bow at speed.
 
 const WATER_Y := -1.4             # the canal surface (TileBuilder.WATER_Y)
 const MASS := 900.0
@@ -31,6 +34,10 @@ var _points: Array[Vector3] = []
 var _k := 0.0                     # lift per metre under, per point
 var _c := 0.0                     # damping per m/s, per point
 var _t := 0.0
+var wake: CPUParticles3D          # foam behind, lying on the water
+var bow_foam: CPUParticles3D      # foam pushed aside by the bow
+var spray: CPUParticles3D         # droplets thrown off the bow at speed
+static var _foam_mat: StandardMaterial3D
 
 
 func _init() -> void:
@@ -55,6 +62,68 @@ func _init() -> void:
 	# About a third of critical damping on the heave.
 	_c = 0.35 * 2.0 * MASS * sqrt(_points.size() * _k / MASS) / _points.size()
 	_hull_shape()
+	wake = _foam(120, 3.5, Vector3(0, 0, LENGTH / 2 - 0.3), 0.8, 3.2)
+	bow_foam = _foam(50, 1.8, Vector3(0, 0, -LENGTH / 2 + 0.9), 0.5, 2.0)
+	spray = CPUParticles3D.new()
+	spray.amount = 30; spray.lifetime = 0.7; spray.local_coords = false
+	var sq := QuadMesh.new(); sq.size = Vector2(0.12, 0.12)
+	spray.mesh = sq; spray.material_override = _foam_material()
+	spray.direction = Vector3(0, 1, -0.4); spray.spread = 35.0
+	spray.initial_velocity_min = 1.5; spray.initial_velocity_max = 3.5
+	spray.gravity = Vector3(0, -9.8, 0)
+	spray.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX; spray.emission_box_extents = Vector3(0.6, 0.05, 0.2)
+	spray.position = Vector3(0, -0.15, -LENGTH / 2 + 0.4)
+	spray.emitting = false
+	spray.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(spray)
+
+
+# Foam lying flat on the water, `amount` patches living `life` seconds, emitted
+# across `width` at `at`, growing to `grow` metres.
+func _foam(amount: int, life: float, at: Vector3, width: float, grow: float) -> CPUParticles3D:
+	var p := CPUParticles3D.new()
+	p.amount = amount; p.lifetime = life; p.local_coords = false
+	var q := PlaneMesh.new(); q.size = Vector2(1.0, 1.0)
+	p.mesh = q; p.material_override = _foam_material()
+	p.particle_flag_rotate_y = true            # (patches turn about the vertical, staying flat)
+	p.direction = Vector3(0, 0, 1); p.spread = 80.0; p.flatness = 1.0   # (fanning out sideways: a V)
+	p.initial_velocity_min = 0.6; p.initial_velocity_max = 1.6
+	p.gravity = Vector3.ZERO
+	p.damping_min = 0.3; p.damping_max = 0.6
+	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX; p.emission_box_extents = Vector3(width, 0.0, 0.2)
+	p.angle_min = 0.0; p.angle_max = 360.0
+	var curve := Curve.new(); curve.add_point(Vector2(0, 0.6)); curve.add_point(Vector2(1, grow))
+	curve.max_value = grow
+	p.scale_amount_curve = curve
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 1, 1, 0.45)); g.set_color(1, Color(1, 1, 1, 0.0))
+	p.color_ramp = g
+	p.position = at
+	p.emitting = false
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(p)
+	return p
+
+
+static func _foam_material() -> StandardMaterial3D:
+	if _foam_mat:
+		return _foam_mat
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 1, 1, 0.9)); g.set_color(1, Color(1, 1, 1, 0.0))
+	g.add_point(0.5, Color(1, 1, 1, 0.45))
+	var t := GradientTexture2D.new(); t.gradient = g
+	t.fill = GradientTexture2D.FILL_RADIAL; t.fill_from = Vector2(0.5, 0.5); t.fill_to = Vector2(0.5, 0.0)
+	t.width = 32; t.height = 32
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.vertex_color_use_as_albedo = true
+	m.albedo_texture = t
+	m.albedo_color = Color(0.92, 0.95, 0.97)
+	m.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_DISABLED
+	_foam_mat = m
+	return _foam_mat
 
 
 # A convex hull round the boat: the gunwale outline on top, a narrower keel below.
@@ -121,6 +190,21 @@ func _physics_process(dt: float) -> void:
 	apply_force(dir * push, stern)
 	# The rudder in the flow: some steering while it only drifts.
 	apply_force(side * (RUDDER * va * sin(rudder)), stern)
+	_wake(absf(va))
+
+
+# The wake: foam while it makes way, more the faster; spray at speed. The
+# foam is kept on the surface whatever the hull does.
+func _wake(v: float) -> void:
+	if wake == null:
+		return
+	wake.emitting = v > 1.0
+	bow_foam.emitting = v > 2.0
+	spray.emitting = v > 4.5
+	wake.speed_scale = clampf(0.6 + v / 6.0, 0.6, 1.6)
+	for f in [wake, bow_foam]:
+		var gp: Vector3 = (f as Node3D).global_position
+		(f as Node3D).global_position = Vector3(gp.x, WATER_Y + 0.04, gp.z)
 
 
 ## Speed along the boat, m/s (negative astern).

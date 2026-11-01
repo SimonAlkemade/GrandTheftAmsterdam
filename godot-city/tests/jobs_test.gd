@@ -21,7 +21,8 @@ class OpenStreet:
 	signal tile_removed(key: String)
 	var tiles := {}
 	var index := {"stations": [["Shell Teststraat", 600, -600], ["Tango Proef", 1600, 600]]}
-	func water_at(_p: Vector3) -> int: return 0
+	var wet := Rect2()                                  # (a canal, for the boat jobs)
+	func water_at(p: Vector3) -> int: return 1 if wet.has_point(Vector2(p.x, p.z)) else 0
 	func nearest_name(_p: Vector3, _within := 35.0) -> String: return "Teststraat"
 	func start_point() -> Vector3: return Vector3(5, 0, 5)
 	func parked_bike(_p: Vector2, _within: float) -> Dictionary: return {}
@@ -245,6 +246,38 @@ func _run() -> void:
 		rides += 1
 	_check(rides == fares and said.has("MISSION PASSED") and mission.money > money + bonus,
 		"%d fares driven: passed, €%d earned" % [rides, mission.money - money])
+	# Mission 7, Canal run.
+	said.clear()
+	crime.stars = 0
+	if w.vehicle != null: w._get_out()
+	w.streamer.wet = Rect2(-600, 380, 1200, 40)          # a long canal along z = 400
+	w.global_position = Vector3(0, 0, 400)
+	mission.start_job(7)
+	var cr = mission.job
+	_check(said.has(cr.title) and cr.phase == "boat" and cr.clock() < 0.0, "Mission 7: %s, '%s'" % [cr.title, cr.objective()])
+	w.vehicle = {"kind": "boat"}                        # (in a boat)
+	await _step(0.1)
+	_check(cr.phase == "crates" and cr.crates.size() == 3 and cr.crates.all(func(c): return w.streamer.water_at(c.pos) == 1),
+		"in a boat: three crates out on the water, %.0f s on the clock" % cr.clock())
+	_check(mission.route.is_empty() and mission.target != Vector3.INF, "the nearest crate is the target, no street route")
+	for k in 3:
+		w.global_position = mission.target
+		await _step(0.1)
+	_check(cr.phase == "deliver" and crime.stars >= 1 and w.streamer.water_at(cr.dock) == 1, "all three fished out (%d stars): to the dock" % crime.stars)
+	money = mission.money
+	w.global_position = cr.dock
+	await _step(0.1)
+	_check(said.has("MISSION PASSED") and mission.money == money + 700, "at the dock: passed, +€700")
+	# ...and out of time.
+	said.clear()
+	mission.start_job(7)
+	var cr2 = mission.job
+	await _step(0.1)
+	cr2._left = 0.05
+	await _step(0.2)
+	_check(said.has("MISSION FAILED"), "the clock run out: failed")
+	w.vehicle = null
+	w.streamer.wet = Rect2()
 	# Past the last job: free roam.
 	mission.start_job(mission.FIRST_JOB + mission.JOBS.size())
 	_check(mission.state == "free" and said.has("ALL JOBS DONE"), "after the last job: free roam")

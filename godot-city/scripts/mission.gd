@@ -37,6 +37,7 @@ const JOBS := [
 	preload("res://scripts/jobs/m04_burn.gd"),
 	preload("res://scripts/jobs/m05_getaway.gd"),
 	preload("res://scripts/jobs/m06_taxi.gd"),
+	preload("res://scripts/jobs/m07_smuggle.gd"),
 ]
 const FIRST_JOB := 4
 
@@ -203,6 +204,10 @@ func _process(delta: float) -> void:
 		if state != "job" or target == Vector3.INF:
 			return
 		_pulse(delta)
+		if not job.routed:
+			if route.size():
+				route = PackedVector2Array(); route_len = 0.0; _ribbon.mesh = null
+			return
 		var at := _here()
 		_route_t -= delta
 		if _route_t <= 0.0 or (at.distance_to(_route_from) > 25.0 and _off_route(at)):
