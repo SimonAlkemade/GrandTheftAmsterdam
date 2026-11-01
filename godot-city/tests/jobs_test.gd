@@ -307,6 +307,36 @@ func _run() -> void:
 	await _step(0.2)
 	_check(said.has("MISSION FAILED"), "out of time: failed")
 	w.vehicle = null
+	# Mission 9, The hit.
+	said.clear()
+	crime.stars = 0
+	w.health = w.MAX_HEALTH
+	w.global_position = Vector3(-150, 0, -150)
+	mission.start_job(9)
+	var ht = mission.job
+	await _step(1.2)
+	var tg: Dictionary = ht.target
+	_check(ht.phase == "hit" and not tg.is_empty() and ht.guards.size() == 2 and w.peds.has(tg) and tg.get("scripted", false),
+		"Mission 9: the man in white and two guards, %.0f m off" % Vector2(tg.pos.x + 150, tg.pos.z + 150).length())
+	_check(mission.target.distance_to(tg.pos) < 0.5, "he is the target on the minimap")
+	var gd: Dictionary = ht.guards[0]
+	w.global_position = tg.pos + Vector3(10, 0, 0)
+	var d0: float = Vector2(gd.pos.x - w.global_position.x, gd.pos.z - w.global_position.z).length()
+	await _step(1.0)
+	var d1: float = Vector2(gd.pos.x - w.global_position.x, gd.pos.z - w.global_position.z).length()
+	_check(ht.hostile and said.has("BODYGUARDS!") and d1 < d0 - 2.0, "close in: the guards come for you (%.1f m -> %.1f m)" % [d0, d1])
+	var hp: float = w.health
+	await _step(3.0)
+	_check(w.health < hp, "and their fists hurt (%.0f health gone)" % (hp - w.health))
+	crime.stars = 2                                     # (a shot in the street)
+	crime._down_ped(tg)
+	await _step(0.1)
+	_check(ht.phase == "lose", "he is down: lose the police")
+	money = mission.money
+	crime.stars = 0
+	await _step(0.1)
+	_check(said.has("MISSION PASSED") and mission.money == money + 800 and not tg.has("scripted"), "passed, +€800; they are passers-by again")
+	w.health = w.MAX_HEALTH
 	# Past the last job: free roam.
 	mission.start_job(mission.FIRST_JOB + mission.JOBS.size())
 	_check(mission.state == "free" and said.has("ALL JOBS DONE"), "after the last job: free roam")

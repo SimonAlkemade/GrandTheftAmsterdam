@@ -65,6 +65,10 @@ the wind over the city (a few wisps on a fine day, a grey lid in the rain,
 their edges lit by the sun), and on a clear night stars and the moon, where
 the moonlight comes from.
 
+The trees sway in the wind (`shaders/tree.gdshader` on their crowns): each
+on its own beat, the tops moving most, the leaves fluttering, a breeze on a
+fine day and a gale in the rain; their shadows sway with them.
+
 The weather changes by itself every two to six game hours, between sunshine
 (about half the time), clouds and rain (a quarter of the time, this being
 Amsterdam), and blends from one into the next over a minute or so. Clouds
@@ -337,6 +341,12 @@ grid of test streets:
   countdown, then six checkpoints through the streets against the clock.
   Each leg's time is its length along the streets at a brisk 6.5 m/s and
   eight seconds over; every checkpoint passed puts the next leg's time on.
+- **Mission 9, The hit** (€800): a man in a white suit holds court on a
+  corner with two bodyguards in black. Find him (the red blip) and take him
+  out any way you like: a bullet, a blast, a Molotov, a car. Come within 14 m,
+  shoot or hurt him and the guards come running with their fists (9 health a
+  punch). Then lose the police. (They are ordinary pedestrians that the job
+  moves: everything that works on people works on them.)
 
 ## Driving physics
 

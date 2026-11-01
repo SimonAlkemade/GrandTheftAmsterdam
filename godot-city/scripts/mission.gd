@@ -39,6 +39,7 @@ const JOBS := [
 	preload("res://scripts/jobs/m06_taxi.gd"),
 	preload("res://scripts/jobs/m07_smuggle.gd"),
 	preload("res://scripts/jobs/m08_race.gd"),
+	preload("res://scripts/jobs/m09_hit.gd"),
 ]
 const FIRST_JOB := 4
 

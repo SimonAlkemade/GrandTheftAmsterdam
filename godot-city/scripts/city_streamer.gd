@@ -67,6 +67,7 @@ const MINI := {
 }
 
 var mats
+var leaves_mat: ShaderMaterial    # the trees' crowns (Main sets the wind on it)
 var data_dir := "res://data/"
 var index := {}
 var tile_size := 1500.0      # the streamed unit: a chunk (or a whole tile in unchunked data)
@@ -184,7 +185,9 @@ func _make_kit() -> void:
 	var mat := func(c: String, rough := 0.7) -> StandardMaterial3D:
 		var m := StandardMaterial3D.new(); m.albedo_color = Color(c); m.roughness = rough
 		return m
-	var leaves := StandardMaterial3D.new(); leaves.vertex_color_use_as_albedo = true; leaves.roughness = 0.9
+	var leaves := ShaderMaterial.new()             # (the crowns sway in the wind: shaders/tree.gdshader)
+	leaves.shader = load("res://shaders/tree.gdshader")
+	leaves_mat = leaves
 	var crown := SphereMesh.new(); crown.radius = 4.2; crown.height = 9.6; crown.radial_segments = 8; crown.rings = 5
 	var bench := BoxMesh.new(); bench.size = Vector3(1.8, 0.5, 0.5)
 	var bike := _parked_bike_mesh()

@@ -850,6 +850,8 @@ func _peds(delta: float) -> void:
 			continue
 		if p.get("dead", false):
 			continue                              # shot: lying where they fell (Crime)
+		if p.get("scripted", false):
+			continue                              # a job moves them (scripts/jobs/)
 		if p.pos.distance_to(global_position) > 85.0:
 			_place(p, false)
 		var h: Node3D = p.h
