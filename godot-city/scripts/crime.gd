@@ -23,6 +23,7 @@ extends Node3D
 ## (Explosions.molotov). Shooting a petrol pump sets it going (GasStations).
 
 signal announce(title: String, sub: String)
+signal caught(how: String)       # WASTED or BUSTED
 
 const Human := preload("res://scripts/human.gd")
 const Models := preload("res://scripts/vehicle_models.gd")
@@ -885,6 +886,7 @@ func _wasted() -> void:
 	walker.health = walker.MAX_HEALTH
 	walker.global_position = streamer.start_point()
 	announce.emit("WASTED", "The hospital bill: €%d. The pistol is gone." % bill)
+	caught.emit("WASTED")
 
 
 func _busted() -> void:
@@ -907,3 +909,4 @@ func _busted() -> void:
 	cars.clear()
 	walker.get_up()
 	announce.emit("BUSTED", "Fined €%d. The police took your pistol." % fine)
+	caught.emit("BUSTED")

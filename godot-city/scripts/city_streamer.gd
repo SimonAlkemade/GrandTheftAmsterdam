@@ -188,9 +188,11 @@ func _make_kit() -> void:
 	var crown := SphereMesh.new(); crown.radius = 4.2; crown.height = 9.6; crown.radial_segments = 8; crown.rings = 5
 	var bench := BoxMesh.new(); bench.size = Vector3(1.8, 0.5, 0.5)
 	var bike := _parked_bike_mesh()
+	var pool := PlaneMesh.new(); pool.size = Vector2(11, 11)
 	_kit = {
 		"trees": [[cyl.call(0.22, 0.32, 5.0), mat.call("4b3a2c"), 2.5, false], [crown, leaves, 8.0, true]],
-		"lamps": [[cyl.call(0.07, 0.11, 4.5), mat.call("1f3a2c", 0.6), 2.25, false], [cyl.call(0.22, 0.12, 0.42), mats.get_mat("lamp_glass"), 4.72, false]],
+		"lamps": [[cyl.call(0.07, 0.11, 4.5), mat.call("1f3a2c", 0.6), 2.25, false], [cyl.call(0.22, 0.12, 0.42), mats.get_mat("lamp_glass"), 4.72, false],
+			[pool, mats.get_mat("lamp_pool"), 0.07, false]],   # (its light on the stones at night)
 		"benches": [[bench, mat.call("5a3f2a"), 0.45, false]],
 		"bikes": [[bike, null, 0.0, true]],
 		"bins": [[cyl.call(0.28, 0.28, 0.95, 8), mat.call("1f3a2c", 0.6), 0.48, false]],

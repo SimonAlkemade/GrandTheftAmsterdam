@@ -29,6 +29,7 @@ const GunFx := preload("res://scripts/gun_fx.gd")
 const Explosions := preload("res://scripts/explosions.gd")
 const Crime := preload("res://scripts/crime.gd")
 const GasStations := preload("res://scripts/gas_stations.gd")
+const StreetLights := preload("res://scripts/street_lights.gd")
 const CrimeHud := preload("res://scripts/crime_hud.gd")
 
 var mats
@@ -41,6 +42,7 @@ var juice
 var gun_fx
 var explosions
 var gas_stations
+var street_lights
 var _boom_size := 0.5           # the map panel's test slider
 var _boomed := false
 var cam: Camera3D
@@ -143,6 +145,11 @@ func _ready() -> void:
 	gas_stations.setup(streamer, walker, traffic, explosions)
 	explosions.stations = gas_stations
 	crime.stations = gas_stations
+	mission.crime = crime; mission.explosions = explosions; mission.stations = gas_stations; mission.boats = boats
+	crime.caught.connect(mission.caught)
+	street_lights = StreetLights.new()
+	add_child(street_lights)
+	street_lights.setup(streamer)
 	walker.juice = juice; walker.gun_fx = gun_fx
 
 	_ui()
@@ -281,6 +288,7 @@ func _set_hour(h: float) -> void:
 	env.fog_light_color = sky_mat.sky_horizon_color
 	env.glow_intensity = lerpf(0.4, 1.0, night)
 	mats.set_night(night)
+	if street_lights: street_lights.night = night
 	Models.set_night(night)
 	_fog()
 	if ui.has("hour"):
@@ -573,12 +581,15 @@ func _mission_ui() -> void:
 			ui.mission_text.text = text
 		else:
 			ui.mission_text.text = "%s  ·  %s" % [text, ("%d m" % d) if d < 1000.0 else ("%.1f km" % (d / 1000.0))]
-		ui.mission_clock.visible = mission.state == "deliver"
-		var t := maxf(mission.time_left, 0.0)
+		var left: float = mission.clock()
+		ui.mission_clock.visible = left >= 0.0
+		var t := maxf(left, 0.0)
 		ui.mission_clock.text = "%d:%02d" % [int(t) / 60, int(t) % 60]
 		ui.mission_clock.add_theme_color_override("font_color", Color(1, 0.3, 0.25) if t < 15.0 else Color(1.0, 0.82, 0.08))
 	ui.cash.visible = mission.state != "off"
-	if mission.state.begins_with("tulips"):
+	if mission.state.begins_with("job") or mission.state == "free":
+		ui.cash.text = "€ %d\n%d job%s done" % [mission.money, mission.jobs_done, "" if mission.jobs_done == 1 else "s"]
+	elif mission.state.begins_with("tulips"):
 		ui.cash.text = "€ %d\n%d tulip%s" % [mission.money, mission.tulips, "" if mission.tulips == 1 else "s"]
 	else:
 		ui.cash.text = "€ %d\n%d parcel%s" % [mission.money, mission.delivered, "" if mission.delivered == 1 else "s"]
@@ -696,11 +707,14 @@ func _process(delta: float) -> void:
 			mission.start()
 			if args.get("mission", "") == "tulips":     # --mission=tulips: straight to Mission 3
 				mission.start_tulips()
+			elif String(args.get("mission", "")).is_valid_int():   # --mission=4: straight to that job
+				mission.start_job(int(args.mission))
 			crime.start()
 		return
 	var focus: Vector3
 	if mode == "walk":
 		focus = walker.global_position
+		street_lights.focus = focus
 		if _damrak_boat.is_empty() and not streamer.tile_at(Vector3(DAMRAK_BOAT.x, 0, DAMRAK_BOAT.y)).is_empty():
 			_damrak_boat = boats.moor(DAMRAK_BOAT, Vector2(_walk_at.x, _walk_at.z))
 		streamer.radius = WALK_RADIUS

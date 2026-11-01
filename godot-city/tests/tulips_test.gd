@@ -2,8 +2,8 @@ extends SceneTree
 ## Mission 3 on a grid of test streets: the fifth parcel ends the courier job
 ## and sends you to the flower market; there you get ten bunches of tulips;
 ## tourists turn up among the people in the street, wait for you when you come
-## near, and buy a bunch each (€6-12) when you stand by them; sold out, it is
-## back to the market.
+## near, and buy a bunch each (€6-12) when you stand by them; sold out the
+## first time, a fixer calls with the first job (Mission 4).
 ##     godot --headless --path godot-city --script tests/tulips_test.gd
 
 const Walker := preload("res://scripts/walker.gd")
@@ -122,7 +122,7 @@ func _run() -> void:
 	_check(waited, "a tourist waits for you when you come near")
 	_check(mission.sold == Mission.BUNCHES and mission.tulips == 0, "all %d bunches sold (%d)" % [Mission.BUNCHES, mission.sold])
 	_check(earned >= Mission.BUNCHES * Mission.PRICE.x and earned <= Mission.BUNCHES * Mission.PRICE.y, "for €%d (€6-12 a bunch)" % earned)
-	_check(mission.state == "tulips_fetch" and said.has("SOLD OUT"), "sold out: back to the market for more")
+	_check(mission.state == "job_wait" and mission.job_no == Mission.FIRST_JOB and said.has("SOLD OUT"), "sold out: a fixer calls with the first job")
 	_check(w.tulips == 0 and mission.tourists.is_empty(), "the bouquet and the tourists' tulips gone")
 	print("tulips test: %d failed" % _fails)
 	quit(1 if _fails else 0)

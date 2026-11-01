@@ -1,0 +1,162 @@
+extends SceneTree
+## The jobs (Mission 4 on, scripts/jobs/) on a grid of test streets: each
+## starts with its target and objective, is passed or failed (busted or wasted
+## on the job is a failure, tried again), pays, and leads on to the next.
+##     godot --headless --path godot-city --script tests/jobs_test.gd
+
+const Walker := preload("res://scripts/walker.gd")
+const Human := preload("res://scripts/human.gd")
+const Traffic := preload("res://scripts/traffic.gd")
+const Crime := preload("res://scripts/crime.gd")
+const Sfx := preload("res://scripts/sfx.gd")
+const Juice := preload("res://scripts/juice.gd")
+const GunFx := preload("res://scripts/gun_fx.gd")
+const Explosions := preload("res://scripts/explosions.gd")
+const GasStations := preload("res://scripts/gas_stations.gd")
+const Mission := preload("res://scripts/mission.gd")
+
+
+class OpenStreet:
+	signal tile_added(key: String, result: Dictionary)
+	signal tile_removed(key: String)
+	var tiles := {}
+	var index := {"stations": [["Shell Teststraat", 600, -600], ["Tango Proef", 1600, 600]]}
+	func water_at(_p: Vector3) -> int: return 0
+	func nearest_name(_p: Vector3, _within := 35.0) -> String: return "Teststraat"
+	func start_point() -> Vector3: return Vector3(5, 0, 5)
+	func parked_bike(_p: Vector2, _within: float) -> Dictionary: return {}
+	func bridge_y(_p: Vector3) -> float: return NAN
+
+class Purse:
+	var money := 100
+
+var _fails := 0
+var said := []
+var w
+var traffic
+var crime
+var ex
+var juice
+var gs
+var mission
+
+
+func _initialize() -> void:
+	var floor := StaticBody3D.new()
+	floor.collision_layer = 2
+	var fcs := CollisionShape3D.new(); var fb := BoxShape3D.new(); fb.size = Vector3(800, 1, 800)
+	fcs.shape = fb; fcs.position.y = -0.5
+	floor.add_child(fcs)
+	root.add_child(floor)
+	traffic = Traffic.new()
+	root.add_child(traffic)
+	var cut := []
+	for k in 7:
+		var c := -300.0 + k * 100.0
+		for seg in 6:
+			var a := -300.0 + seg * 100.0
+			cut.append({"kind": "road", "w": 8.0, "p": PackedVector2Array([Vector2(a, c), Vector2(a + 100.0, c)])})
+			cut.append({"kind": "road", "w": 8.0, "p": PackedVector2Array([Vector2(c, a), Vector2(c, a + 100.0)])})
+	traffic.add_tile("grid", cut)
+	traffic.target = {"car": 0, "bus": 0, "tram": 0, "bike": 0, "canta": 0}
+	w = Walker.new()
+	w.traffic = traffic
+	var cam := Camera3D.new()
+	root.add_child(cam)
+	var street := OpenStreet.new()
+	w.setup(street, cam)
+	root.add_child(w)
+	w.active = true
+	var sfx = Sfx.new(); root.add_child(sfx)
+	juice = Juice.new(); root.add_child(juice)
+	var gfx = GunFx.new(); root.add_child(gfx)
+	gfx.setup(w, w.streamer, sfx, juice)
+	crime = Crime.new()
+	root.add_child(crime)
+	mission = Mission.new()
+	root.add_child(mission)
+	mission.setup(street, traffic, w)
+	crime.setup(w.streamer, traffic, w, mission)
+	ex = Explosions.new()
+	root.add_child(ex)
+	ex.setup(w, traffic, crime, sfx, juice, gfx, w.streamer)
+	ex.place_canisters = false
+	gs = GasStations.new()
+	root.add_child(gs)
+	gs.setup(street, w, traffic, ex)
+	ex.stations = gs
+	crime.explosions = ex; crime.sfx = sfx; crime.gun_fx = gfx; crime.stations = gs
+	w.juice = juice
+	mission.crime = crime; mission.explosions = ex; mission.stations = gs
+	crime.caught.connect(mission.caught)
+	mission.announce.connect(func(t, s): said.append(t))
+	_run.call_deferred()
+
+
+func _check(ok: bool, what: String) -> void:
+	print(("ok   " if ok else "FAIL ") + what)
+	if not ok: _fails += 1
+
+
+func _step(secs: float) -> void:
+	for i in int(secs * 60.0):
+		ex.step(1.0 / 60.0)
+		juice.step(1.0 / 60.0)
+		crime._physics_process(1.0 / 60.0)
+		mission._process(1.0 / 60.0)
+		await physics_frame
+
+
+func _ped(at: Vector3) -> Dictionary:
+	var p := {"h": Human.new(), "pos": at, "heading": 0.0, "speed": 0.0, "turn": 1e9, "stag": 0.0}
+	p.h.random_look(RandomNumberGenerator.new())
+	root.add_child(p.h)
+	p.h.position = at
+	w.peds.append(p)
+	return p
+
+
+func _run() -> void:
+	w.set_physics_process(false); traffic.set_process(false); crime.set_physics_process(false); ex.set_process(false); juice.set_process(false)
+	mission.set_process(false)
+	w.global_position = Vector3(-150, 0, -150)
+	crime.start()
+	w.streamer.tile_added.emit("t", {"rect": Rect2(-300, -300, 600, 600)})
+	await physics_frame; await physics_frame
+	# Mission 4, Burn it down.
+	mission.start_job(4)
+	var job = mission.job
+	_check(mission.state == "job" and job != null and said.has(job.title), "--mission=4: %s" % (job.title if job else "none"))
+	_check(crime.molotovs >= 2, "two Molotovs come with the job")
+	var st: Dictionary = job.station
+	_check(not st.is_empty() and mission.target != Vector3.INF and mission.route.size() > 1,
+		"the target: the %s, a route there (%.0f m)" % [st.get("name", "?"), mission.route_len])
+	_check(mission.objective().begins_with("Get to the"), "objective: '%s'" % mission.objective())
+	w.global_position = st.at + Vector3(0, 0, 30)
+	await _step(0.2)
+	_check(job.phase == "burn" and mission.objective().begins_with("Blow up"), "close by: '%s'" % mission.objective())
+	for pd in st.pumps:
+		for k in 3: gs.hit_pump(pd)
+	await _step(6.0)
+	_check(st.ruined and job.phase == "lose" and crime.stars >= 2, "blown up: lose the police (%d stars)" % crime.stars)
+	var money: int = mission.money
+	var reward: int = job.reward
+	crime.stars = 0
+	await _step(0.2)
+	_check(said.has("MISSION PASSED") and mission.money == money + reward, "stars gone: mission passed, +€%d" % reward)
+	_check(mission.state == "job_wait" and mission.job_no == 5, "and on to the next job")
+	# A failure: busted on the job, it is tried again.
+	said.clear()
+	mission.start_job(4)
+	var job2 = mission.job
+	_check(job2 != null and not is_same(job2.station, st), "again: a station still standing this time (%s)" % job2.station.get("name", "?"))
+	crime._busted()
+	await _step(0.1)
+	_check(said.has("MISSION FAILED") and mission.state == "job_wait" and mission.job_no == 4, "busted on the job: failed, tried again")
+	await _step(5.5)
+	_check(mission.state == "job" and mission.job != null and mission.job_no == 4, "five seconds later, Mission 4 again")
+	# Past the last job: free roam.
+	mission.start_job(mission.FIRST_JOB + mission.JOBS.size())
+	_check(mission.state == "free" and said.has("ALL JOBS DONE"), "after the last job: free roam")
+	print("jobs test: %d failed" % _fails)
+	quit(1 if _fails else 0)

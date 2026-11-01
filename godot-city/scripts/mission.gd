@@ -11,6 +11,9 @@ extends Node3D
 ## time, to the tourists among the people in the street (a tulip turns over
 ## their heads, a pink dot on the minimap). Walk up to one and they wait for
 ## you; stand by them a moment and they buy. Sold out, fetch more.
+##
+## Then the jobs, Mission 4 on (scripts/jobs/): each a script of its own run
+## while the state is "job", one after the other; a job failed is tried again.
 
 signal announce(title: String, sub: String)   # a big message in the middle of the screen
 
@@ -29,6 +32,11 @@ const TOURIST_FROM := Vector2(15.0, 70.0)   # how far from you a new one is pick
 const SELL_NEAR := 1.8               # metres: close enough to sell
 const SELL_TIME := 0.6               # seconds standing by them
 const PINK := Color(1.0, 0.35, 0.62)
+## The jobs, in order: Mission 4, 5, ...
+const JOBS := [
+	preload("res://scripts/jobs/m04_burn.gd"),
+]
+const FIRST_JOB := 4
 
 var streamer
 var traffic
@@ -55,6 +63,15 @@ var tourists: Array = []             # pedestrians (Walker.peds entries) who wan
 var _tourist_t := 0.0
 var _sale_t := 0.0
 var _tulip_mesh: Array = []          # [stem, flower] meshes, for the icons
+var crime                            # (the jobs use these)
+var explosions
+var stations
+var boats
+var job                              # the job running (state "job")
+var job_no := 0                      # its mission number
+var jobs_done := 0
+var _job_wait := 0.0
+var _jobs_unlocked := false
 
 
 func setup(s, t, w) -> void:
@@ -84,8 +101,66 @@ func start_tulips() -> void:
 	announce.emit("MISSION 3: TULIPS", "Fetch a stock of tulips at the Bloemenmarkt and sell them to tourists")
 
 
+## Mission `n` (4 on) straight away.
+func start_job(n: int) -> void:
+	_clear()
+	_set_carrying(false)
+	for t in tourists.duplicate():
+		_untourist(t)
+	if job:
+		job.queue_free()
+		job = null
+	_jobs_unlocked = true
+	var i := n - FIRST_JOB
+	if i < 0 or i >= JOBS.size():
+		state = "free"
+		announce.emit("ALL JOBS DONE", "€%d. Amsterdam is yours" % money)
+		return
+	job_no = n
+	job = JOBS[i].new()
+	job.m = self
+	add_child(job)
+	job.finished.connect(_job_over)
+	state = "job"
+	job.begin()
+	if not job.over:
+		announce.emit(job.title, job.briefing)
+
+
+func _job_over(ok: bool, why: String) -> void:
+	var n := job_no
+	_clear()
+	if ok:
+		money += job.reward
+		jobs_done += 1
+		announce.emit("MISSION PASSED", "+ €%d  ·  %s" % [job.reward, why])
+		job.queue_free(); job = null
+		state = "job_wait"; _job_wait = 5.0; job_no = n + 1
+	else:
+		announce.emit("MISSION FAILED", why + ". Try again")
+		job.queue_free(); job = null
+		state = "job_wait"; _job_wait = 5.0; job_no = n
+
+
+## The police got you (Crime): the job hears of it.
+func caught(how: String) -> void:
+	if state == "job" and job:
+		job.caught(how)
+
+
+## Seconds left on the clock for the bar, or -1 for none.
+func clock() -> float:
+	if state == "deliver":
+		return time_left
+	if state == "job" and job:
+		return job.clock()
+	return -1.0
+
+
 ## What to do now, for the top of the screen.
 func objective() -> String:
+	if state == "job" and job:
+		return job.objective()
 	if state == "tulips_fetch" and target != Vector3.INF:
 		return "Fetch tulips at the Bloemenmarkt"
 	if state == "tulips_sell":
@@ -113,7 +188,24 @@ func _here() -> Vector2:
 
 
 func _process(delta: float) -> void:
-	if state == "off" or traffic == null:
+	if state == "off" or state == "free" or traffic == null:
+		return
+	if state == "job_wait":
+		_job_wait -= delta
+		if _job_wait <= 0.0:
+			start_job(job_no)
+		return
+	if state == "job":
+		if job:
+			job.step(delta)
+		if state != "job" or target == Vector3.INF:
+			return
+		_pulse(delta)
+		var at := _here()
+		_route_t -= delta
+		if _route_t <= 0.0 or (at.distance_to(_route_from) > 25.0 and _off_route(at)):
+			_route_t = 3.0
+			_reroute()
 		return
 	if state == "tulips_sell":
 		_selling(delta)
@@ -252,6 +344,11 @@ func _sell(p: Dictionary) -> void:
 		_untourist(t)
 	target = Vector3.INF
 	route = PackedVector2Array(); route_len = 0.0; _ribbon.mesh = null
+	if not _jobs_unlocked:                    # the first stock sold: a fixer has work for you
+		announce.emit("SOLD OUT", "+ €%d. A fixer calls with a job for you" % price)
+		_jobs_unlocked = true
+		state = "job_wait"; _job_wait = 5.0; job_no = FIRST_JOB
+		return
 	announce.emit("SOLD OUT", "+ €%d. Fetch more tulips at the Bloemenmarkt" % price)
 	state = "tulips_fetch"; _wait = 3.0
 

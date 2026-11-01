@@ -83,6 +83,19 @@ func build() -> void:
 	lib["pitch"] = _plain(Color("4f8d4a"))
 	lib["lamp_glass"] = _plain(Color("fff3d0")); lib["lamp_glass"].emission_enabled = true
 	lib["lamp_glass"].emission = Color("ffd58a"); lib["lamp_glass"].emission_energy_multiplier = 0.0
+	# The pool of warm light a street lamp throws on the stones at night: an
+	# additive glow on the ground (the browser's renderer has no decals, and a
+	# real light for every lamp would cost far too much; StreetLights lights
+	# the few nearest you for real).
+	var pool := StandardMaterial3D.new()
+	pool.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	pool.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	pool.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	pool.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_DISABLED
+	pool.albedo_texture = _pool_tex()
+	pool.albedo_color = Color(0, 0, 0)
+	pool.render_priority = 1
+	lib["lamp_pool"] = pool
 
 
 func get_mat(name: String) -> Material:
@@ -95,3 +108,19 @@ func set_night(night: float) -> void:
 	for m in glowing:
 		m.emission_energy_multiplier = night * (0.7 if m.has_meta("shop") else 1.4)
 	lib["lamp_glass"].emission_energy_multiplier = night * 4.0
+	lib["lamp_pool"].albedo_color = Color(1.0, 0.72, 0.38) * night * 0.7
+	lib["lamp_pool"].albedo_color.a = 1.0
+
+
+# A soft round falloff (bright in the middle, gone at the rim), for the lamp pools.
+func _pool_tex() -> Texture2D:
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 1, 1, 1)); g.set_color(1, Color(0, 0, 0, 1))
+	g.add_point(0.35, Color(0.55, 0.55, 0.55, 1))
+	g.add_point(0.7, Color(0.12, 0.12, 0.12, 1))
+	var t := GradientTexture2D.new()
+	t.gradient = g
+	t.fill = GradientTexture2D.FILL_RADIAL
+	t.fill_from = Vector2(0.5, 0.5); t.fill_to = Vector2(0.5, 0.0)
+	t.width = 64; t.height = 64
+	return t

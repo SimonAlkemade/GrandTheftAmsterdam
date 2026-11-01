@@ -40,7 +40,11 @@ The clock runs: a game hour passes in a minute, a whole day and night in 24
 minutes (the slider in the map panel sets the time; the time and the weather
 show over the street name). The sun rises in the east and sets red in the
 west, and at night the windows, street lamps, headlights and the tram and bus
-destination signs light up.
+destination signs light up. Every street lamp throws a warm pool of light on
+the stones round its foot (an additive glow: the browser's renderer has no
+decals), and the six lamps nearest you are real lights
+(`scripts/street_lights.gd`), so the people, cars and walls round you catch
+their light as you pass.
 
 The weather changes by itself every two to six game hours, between sunshine
 (about half the time), clouds and rain (a quarter of the time, this being
@@ -273,11 +277,29 @@ their heads, and they are pink dots on the minimap; the nearest is the yellow
 blip. Walk up to one and they stop and turn to you; stand by them a moment
 and they buy a bunch for €6 to €12, one each. A tourist you scare off (a
 gunshot), knock down or leave far behind is no longer one, and others turn
-up. Sold out, it is back to the market for more. (`--mission=tulips` starts
+up. The first time you are sold out, a fixer calls (the jobs, below). (`--mission=tulips` starts
 the game straight at Mission 3.) `tests/tulips_test.gd` plays it through on a
 grid of test streets:
 
     godot --headless --path godot-city --script tests/tulips_test.gd
+
+## The jobs: Mission 4 on
+
+Once your first stock of tulips is sold, a fixer calls with work. The jobs
+come one after another (`scripts/jobs/`, each a script of its own that
+Mission runs): the yellow circle and the route lead you there, the bar at the
+top says what to do (with a clock when there is one), and each pays when it
+is done, MISSION PASSED. Wasted or busted on a job, it is MISSION FAILED and
+the same job comes again five seconds later. `--mission=4` (and so on) starts
+the game straight at that job. `tests/jobs_test.gd` plays them through on a
+grid of test streets:
+
+    godot --headless --path godot-city --script tests/jobs_test.gd
+
+- **Mission 4, Burn it down** (€400): the fixer wants the nearest petrol
+  station gone, and two Molotovs come with the job. Get there, blow it up
+  (Molotovs, or shoot its pumps) until the tank goes and the place is a
+  ruin, then lose the police.
 
 ## Driving physics
 
@@ -521,6 +543,8 @@ another size: `python chunk_godot_tiles.py godot-city/data 375`.
 - `models/boat.glb`: the sloep, modelled by `blender/make_boat.py`
 - `models/bike_*.glb`: the bikes, modelled in Blender by `blender/make_bikes.py`
   (`pip install bpy`, then `python blender/make_bikes.py godot-city/models`)
+- `scripts/jobs/`: the jobs, Mission 4 on (`job.gd` is what each one fills in)
+- `scripts/street_lights.gd`: the real lights at the street lamps nearest you at night
 - `scripts/mission.gd`: the parcel courier: circles, routing (A* over the street graph), clock and pay
 - `scripts/minimap.gd`: the round minimap (built from the tile meshes)
 - `scripts/map_camera.gd`: map-app orbit camera with trackpad gestures
