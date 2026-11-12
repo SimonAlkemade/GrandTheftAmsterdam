@@ -107,31 +107,54 @@ or up to a boat and press E to climb aboard.
 ## The compact city
 
 The whole of Amsterdam (about 24 by 17 km, 4,080 chunks) is too big to play,
-so the game plays a compact Amsterdam: the same city, made small
-(`compact_city.py`, at the repository root, from the full data):
+so the game plays a compact Amsterdam made from it (`compact_city.py`, at the
+repository root): the city inside the A10 ring, with Noord across the IJ and
+a tail out to the Johan Cruijff ArenA, at 0.45 of its size. It is drawn as a
+flat map too (`map/`).
 
-- **The centre is untouched**: within 1 km of the Dam (the canal ring, the
-  Wallen, Centraal and the IJ front) everything is exactly where it is.
-- **The rest is pulled in**: beyond it the city is drawn towards the Dam by a
-  smooth radial warp (no kink where it begins), so the Jordaan, De Pijp, Oost,
-  Westerpark, the Vondelpark and Noord across the IJ all come close, and
-  everything out to 2.4 km lands within 1.6 km. Every street, canal, bridge,
-  park, square, lamp, tree, bench and place moves by the same warp, so the
-  streets still join up and the canals stay rings.
-- **Fewer houses, the real ones**: buildings are not squashed. Each moves
-  whole with its warped centre and keeps its real shape, height and roof,
-  and is left out where it would now overlap a street, a canal or another
-  building (13,725 kept of 37,150 within reach). Footpaths go where the city
-  is squeezed to less than half; streets, bike paths and tram lines stay.
-- **An island**: open water all round (you are held 120 m off the shore,
-  swimming or by boat), about 3.2 km across. 18 of the city's petrol stations
-  are on it: those within reach, and more from further out brought in along
-  the outer belt.
+- **Smaller, the same shape**: every position is brought 0.45 of the way to
+  the Dam, so the districts keep their places, the canal ring its shape and
+  the city its orientation. Streets keep their real widths (car streets at
+  least 6 m), so they stay drivable. The one deliberate distortion: south of
+  Zuid the way to the Arena is halved again, so the stadium sits 2.8 km from
+  the Dam rather than 3.3 km, with its district joined on.
+- **Fewer canals**: the wide water stays (the IJ, the Amstel, the harbours,
+  the lakes), and of the canals the named ones a player knows: the Singel,
+  Herengracht, Keizersgracht and Prinsengracht, the Singelgracht, the
+  Brouwersgracht, the Jordaan's and the Wallen's own, the docks. The rest
+  (75% of the canals' water) is filled in, its quays kept as streets. Canals
+  are widened back where they are free; beside a quay street (6 m at most) the
+  water stops at the kerb. Bridges are kept where a street still crosses
+  water.
+- **Simpler streets**: no footpaths, short bike paths or narrow side streets
+  outside the centre, and short dead ends pruned; 91% of the car streets'
+  length is one network.
+- **50,000 houses, the real ones**: each keeps its shape at 0.45 of its size
+  around its own centre, and its height and roof. Landmarks come first
+  (Centraal, the Royal Palace, the Westerkerk, the Rijksmuseum and the rest),
+  then the centre outwards. A house that lands on a street or in a canal steps
+  back off it (up to 6 m) or is left out, as is one that would overlap another.
+  The centre keeps every house that fits; the outer districts are thinned
+  evenly.
+- **An edge**: a green margin all round, the IJ running on into it, and you
+  are held 120 m out into it (on foot, swimming, by boat). 18 petrol stations:
+  those inside, and more from further out brought in along the edge.
+- **Fixed points move with it**: `streamer.compact_point()` puts a place
+  given in the real city's metres (the Bloemenmarkt, the Damrak boat) where it
+  now stands.
 
-It is 256 chunks and 11 MB, against 92 MB. The full city is still there:
-`--city=full` plays it.
+It is 4.5 by 4.9 km, 256 chunks and 17 MB, against 92 MB. The full city is
+still there: `--city=full` plays it. The old island layout (the centre 1:1,
+the rest warped in) is `--layout=v1`.
 
-    python compact_city.py godot-city/data godot-city/data-compact
+**The map** (`map/amsterdam_game_map.svg`, and a 4096 px PNG) is the same
+data drawn flat, north up, with no labels, in a muted palette: beige and
+terracotta houses, landmarks darker, desaturated blue water, soft green
+parks, light-grey streets at their widths. `render_map` draws it, and
+Chromium (Playwright) rasterises it in tiles; the same drawing at 2048 px is
+the game's overview under its tiles.
+
+    python compact_city.py godot-city/data godot-city/data-compact   # ~6 min
     python -m unittest tests.test_compact_city
     godot --headless --path godot-city --script tests/compact_test.gd
 

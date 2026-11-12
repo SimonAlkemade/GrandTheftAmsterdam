@@ -710,28 +710,47 @@ const MAX_RAGDOLLS := 8          # at once; past that a knock is only a stagger
 const GET_UP := 2.0              # seconds lying still before getting up
 
 
-## The compact city is an island: out on the open water round it you are
-## held at EDGE beyond its shore (swimming, by boat, in whatever you drive).
+## The compact city has an edge: its outline (index.compact.edge, a little way
+## out into the green margin and the IJ round it), or for the old island
+## layout a circle EDGE beyond its shore. Past it you are held on it, on foot,
+## swimming, by boat, in whatever you drive.
 const EDGE := 120.0             # metres out from the island's shore
+var _edge := PackedVector2Array()   # the compact city's outline, scene metres (index.compact.edge)
 func _island_edge() -> void:
 	var ix = streamer.get("index") if streamer else null
 	if typeof(ix) != TYPE_DICTIONARY or not ix.has("compact"):
 		return
 	var c: Dictionary = ix.compact
-	var centre := Vector2(float(c.centre[0]) / 10.0, -float(c.centre[1]) / 10.0)
-	var edge: float = float(c.island) / 10.0 + EDGE
 	var n: Node3D = self
 	if vehicle != null and vehicle.kind == "boat":
 		n = vehicle.boat
 	elif vehicle != null and vehicle.has("body"):
 		n = vehicle.body
-	var d := Vector2(n.global_position.x, n.global_position.z) - centre
-	if d.length() <= edge:
-		return
-	var back := centre + d.normalized() * edge
+	var at := Vector2(n.global_position.x, n.global_position.z)
+	var back := at
+	if c.has("edge"):                            # the city's outline (layout v2): held on it
+		if _edge.is_empty():
+			var f: Array = c.edge
+			for k in range(0, f.size() - 1, 2):
+				_edge.append(Vector2(float(f[k]) / 10.0, -float(f[k + 1]) / 10.0))
+		if Geometry2D.is_point_in_polygon(at, _edge):
+			return
+		var best := INF
+		for k in _edge.size():
+			var q := Geometry2D.get_closest_point_to_segment(at, _edge[k], _edge[(k + 1) % _edge.size()])
+			if q.distance_squared_to(at) < best:
+				best = q.distance_squared_to(at); back = q
+	else:                                        # the island (layout v1): a circle
+		var centre := Vector2(float(c.centre[0]) / 10.0, -float(c.centre[1]) / 10.0)
+		var edge: float = float(c.island) / 10.0 + EDGE
+		var d := at - centre
+		if d.length() <= edge:
+			return
+		back = centre + d.normalized() * edge
 	n.global_position = Vector3(back.x, n.global_position.y, back.y)
 	if n is RigidBody3D:                     # (no further out: what it had outwards is gone)
-		var out := Vector3(d.normalized().x, 0, d.normalized().y)
+		var o := (at - back).normalized()
+		var out := Vector3(o.x, 0, o.y)
 		var rb: RigidBody3D = n
 		rb.linear_velocity -= out * maxf(rb.linear_velocity.dot(out), 0.0)
 

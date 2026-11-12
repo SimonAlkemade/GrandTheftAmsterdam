@@ -85,6 +85,8 @@ var _jobs_unlocked := false
 
 func setup(s, t, w) -> void:
 	streamer = s; traffic = t; walker = w
+	if s != null and s.has_method("compact_point"):
+		stall_at = s.compact_point(BLOEMENMARKT)   # (in the compact city, where the Singel now runs)
 	_rng.randomize()
 	_ribbon = MeshInstance3D.new()
 	_ribbon.material_override = _mat(0.85)

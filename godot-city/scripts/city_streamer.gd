@@ -123,6 +123,17 @@ func start_point() -> Vector3:
 	return Vector3(float(index.start[0]) / 10.0, 0, -float(index.start[1]) / 10.0)
 
 
+## A point of the real city (scene metres) where it stands in this one: in
+## the compact city (layout v2, the whole city at `scale` about the Dam) it is
+## brought in towards the Dam; in the full city it stays where it is.
+func compact_point(p: Vector2) -> Vector2:
+	var c = index.get("compact", {})
+	if typeof(c) != TYPE_DICTIONARY or not c.has("scale"):
+		return p
+	var centre := Vector2(float(c.centre[0]) / 10.0, -float(c.centre[1]) / 10.0)
+	return centre + (p - centre) * float(c.scale)
+
+
 func total_buildings() -> int:
 	var n := 0
 	for t in index.get("tiles", []):

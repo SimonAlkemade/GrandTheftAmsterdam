@@ -751,8 +751,9 @@ func _process(delta: float) -> void:
 		focus = walker.global_position
 		street_lights.focus = focus
 		grade.low = clampf((35.0 - walker.health) / 35.0, 0.0, 1.0)
-		if _damrak_boat.is_empty() and not streamer.tile_at(Vector3(DAMRAK_BOAT.x, 0, DAMRAK_BOAT.y)).is_empty():
-			_damrak_boat = boats.moor(DAMRAK_BOAT, Vector2(_walk_at.x, _walk_at.z))
+		var damrak: Vector2 = streamer.compact_point(DAMRAK_BOAT)
+		if _damrak_boat.is_empty() and not streamer.tile_at(Vector3(damrak.x, 0, damrak.y)).is_empty():
+			_damrak_boat = boats.moor(damrak, Vector2(_walk_at.x, _walk_at.z))
 		streamer.radius = WALK_RADIUS
 		traffic.player = walker.global_position if walker.vehicle == null else Vector3(1e9, 0, 1e9)
 		ui.prompt.text = walker.prompt

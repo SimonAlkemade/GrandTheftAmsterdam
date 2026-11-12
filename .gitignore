@@ -16,3 +16,6 @@ data_city_fetch.log
 godot-city/.godot/
 shots-godot/*.log
 web-build/
+
+# the 8192 px map (python compact_city.py draws it; the SVG and a 4096 px PNG are committed)
+map/amsterdam_game_map.png
