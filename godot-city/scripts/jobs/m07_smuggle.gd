@@ -116,7 +116,7 @@ func _spread() -> void:
 ## d.y metres from you, or INF.
 func _water(d: Vector2) -> Vector3:
 	var s = m.streamer
-	for k in 60:
+	for k in 300:                                      # (canals are narrow: many tries)
 		var a := _rng.randf() * TAU
 		var r := _rng.randf_range(d.x, d.y)
 		var p := here() + Vector3(cos(a) * r, 0, sin(a) * r)

@@ -68,7 +68,7 @@ const MINI := {
 
 var mats
 var leaves_mat: ShaderMaterial    # the trees' crowns (Main sets the wind on it)
-var data_dir := "res://data/"
+var data_dir := "res://data/"     # the full city; res://data-compact/ the compact one (compact_city.py)
 var index := {}
 var tile_size := 1500.0      # the streamed unit: a chunk (or a whole tile in unchunked data)
 var file_size := 1500.0      # a tile file
@@ -145,7 +145,7 @@ func _overview() -> void:
 			img.generate_mipmaps()
 			m.albedo_texture = ImageTexture.create_from_image(img)
 	if _web:
-		_http_get("data/overview.jpg", true, func(code: int, data: String):
+		_http_get(_web_dir() + "overview.jpg", true, func(code: int, data: String):
 			set_image.call(Marshalls.base64_to_raw(data) if code == 200 else PackedByteArray()))
 	else:
 		set_image.call(FileAccess.get_file_as_bytes(data_dir + "overview.jpg"))
@@ -335,7 +335,12 @@ func _fetch_file(fk: String) -> void:
 
 
 func _file_path(fk: String) -> String:
-	return "data/tiles/%s.json" % fk
+	return _web_dir() + "tiles/%s.json" % fk
+
+
+# Where the page serves this data set from ("data/" or "data-compact/").
+func _web_dir() -> String:
+	return data_dir.trim_prefix("res://")
 
 
 # Fetch a file published next to the page; `done(code, text)` gets the text,

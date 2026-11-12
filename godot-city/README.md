@@ -104,6 +104,37 @@ Fall into a
 canal and you swim (Shift for a faster crawl); swim to a quay to climb out,
 or up to a boat and press E to climb aboard.
 
+## The compact city
+
+The whole of Amsterdam (about 24 by 17 km, 4,080 chunks) is too big to play,
+so the game plays a compact Amsterdam: the same city, made small
+(`compact_city.py`, at the repository root, from the full data):
+
+- **The centre is untouched**: within 1 km of the Dam (the canal ring, the
+  Wallen, Centraal and the IJ front) everything is exactly where it is.
+- **The rest is pulled in**: beyond it the city is drawn towards the Dam by a
+  smooth radial warp (no kink where it begins), so the Jordaan, De Pijp, Oost,
+  Westerpark, the Vondelpark and Noord across the IJ all come close, and
+  everything out to 2.4 km lands within 1.6 km. Every street, canal, bridge,
+  park, square, lamp, tree, bench and place moves by the same warp, so the
+  streets still join up and the canals stay rings.
+- **Fewer houses, the real ones**: buildings are not squashed. Each moves
+  whole with its warped centre and keeps its real shape, height and roof,
+  and is left out where it would now overlap a street, a canal or another
+  building (13,725 kept of 37,150 within reach). Footpaths go where the city
+  is squeezed to less than half; streets, bike paths and tram lines stay.
+- **An island**: open water all round (you are held 120 m off the shore,
+  swimming or by boat), about 3.2 km across. 18 of the city's petrol stations
+  are on it: those within reach, and more from further out brought in along
+  the outer belt.
+
+It is 256 chunks and 11 MB, against 92 MB. The full city is still there:
+`--city=full` plays it.
+
+    python compact_city.py godot-city/data godot-city/data-compact
+    python -m unittest tests.test_compact_city
+    godot --headless --path godot-city --script tests/compact_test.gd
+
 ## Boats
 
 Sloepen, the open motor launches of the canals, lie moored along the quays

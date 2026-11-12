@@ -237,6 +237,7 @@ func _free(p: Vector3) -> bool:
 func _physics_process(delta: float) -> void:
 	if not active:
 		return
+	_island_edge()
 	_mouse_idle += delta
 	_since_hurt += delta
 	if _since_hurt > HEAL_AFTER and health > 0.0:
@@ -707,6 +708,32 @@ const KNOCK_VEHICLE := 3.0       # m/s
 const KNOCK_YOU := 4.5           # m/s: a sprint (a run is 6.2, a walk 1.7)
 const MAX_RAGDOLLS := 8          # at once; past that a knock is only a stagger
 const GET_UP := 2.0              # seconds lying still before getting up
+
+
+## The compact city is an island: out on the open water round it you are
+## held at EDGE beyond its shore (swimming, by boat, in whatever you drive).
+const EDGE := 120.0             # metres out from the island's shore
+func _island_edge() -> void:
+	var ix = streamer.get("index") if streamer else null
+	if typeof(ix) != TYPE_DICTIONARY or not ix.has("compact"):
+		return
+	var c: Dictionary = ix.compact
+	var centre := Vector2(float(c.centre[0]) / 10.0, -float(c.centre[1]) / 10.0)
+	var edge: float = float(c.island) / 10.0 + EDGE
+	var n: Node3D = self
+	if vehicle != null and vehicle.kind == "boat":
+		n = vehicle.boat
+	elif vehicle != null and vehicle.has("body"):
+		n = vehicle.body
+	var d := Vector2(n.global_position.x, n.global_position.z) - centre
+	if d.length() <= edge:
+		return
+	var back := centre + d.normalized() * edge
+	n.global_position = Vector3(back.x, n.global_position.y, back.y)
+	if n is RigidBody3D:                     # (no further out: what it had outwards is gone)
+		var out := Vector3(d.normalized().x, 0, d.normalized().y)
+		var rb: RigidBody3D = n
+		rb.linear_velocity -= out * maxf(rb.linear_velocity.dot(out), 0.0)
 
 
 ## Knocks `p` over with velocity `vel`; false (a stagger instead) when too many
