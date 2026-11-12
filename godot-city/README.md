@@ -474,7 +474,10 @@ What you drive is a real vehicle (Godot's VehicleBody3D, `scripts/vehicle_physic
 each wheel is a damped spring with tyre grip, the engine pulls through the
 driven wheels, and the body pitches under braking and acceleration and rolls
 in corners. It hits buildings, quay walls, bridge railings and the traffic
-around you, and a car that goes off a quay ends up on the canal bed. The bike
+around you, and a car that goes off a quay ends up on the canal bed: drive a
+car, Canta or bus into the water and a moment and a half later you are
+**WASTED** (the hospital bill, back at the start; the car stays in the canal,
+`tests/canal_test.gd`). Off a bike you only get wet: you swim. The bike
 leans by exactly the angle that balances its turn (tan lean = speed x yaw rate
 / g). Each chunk carries the collision floor for this: the street, bridge
 decks, quay walls and canal beds. The traffic itself stays on its routes, but

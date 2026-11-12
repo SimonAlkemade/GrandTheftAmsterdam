@@ -62,6 +62,9 @@ const HEAL_AFTER := 6.0         # seconds without harm before it comes back...
 const HEAL_RATE := 5.0          # ...this much a second
 const HIT_BY := 4.0             # m/s: a vehicle faster than this knocks you down
 var health := MAX_HEALTH
+var wasted_by := ""              # why you are wasted, if not from your wounds (Crime says it)
+const SINK_TIME := 1.5          # seconds a car, Canta or bus is in the water before you are wasted
+var _sunk_t := 0.0
 var stun := 0.0                 # seconds left lying on the ground (tasered, run over)
 var _since_hurt := 99.0
 var _rag = null                 # your own ragdoll while you are down
@@ -444,6 +447,7 @@ func _get_in() -> void:
 	elif DRIVE.has(v.kind) and (v.kind != "bus" or v.has("body") or _at_cab(v, here)):
 		v.driver = true
 		v.parked = false
+		_sunk_t = 0.0
 		if not v.has("body"):
 			_physical(v, v.kind == "bike")
 		var b: VehicleBody3D = v.body
@@ -586,6 +590,11 @@ func _drive(dt: float) -> void:
 	car_speed = VPhys.drive(b, vehicle.kind, 0.0 if sunk else throttle, steer, Input.is_physical_key_pressed(KEY_SPACE),
 		Input.is_physical_key_pressed(KEY_SHIFT), dt)
 	b.linear_damp = 2.5 if sunk else 0.0
+	# Into the water with it (not a bike: off that you swim): once it has gone in, WASTED.
+	_sunk_t = _sunk_t + dt if sunk and vehicle.kind != "bike" else 0.0
+	if _sunk_t >= SINK_TIME and health > 0.0 and crime != null and crime.state != "off":
+		wasted_by = "You drove into the canal."
+		health = 0.0
 	heading = VPhys.heading(b)
 	var f := Vector2(-sin(heading), -cos(heading))
 	vehicle.pos = Vector2(p.x, p.z) + f * spec.box.z * 0.5   # the front, for the traffic behind you
