@@ -10,10 +10,11 @@ const Boat := preload("res://scripts/boat.gd")
 const COLORS := ["e6e6e2", "e6e6e2", "1d2e45", "e6e6e2", "2d4a34", "7a1e1e"]
 
 var streamer
-const TARGET := 36               # boats moored round you as you walk
-const NEAR := 150.0              # half the spots tried lie within this of you
+const TARGET := 120              # boats moored round you as you walk
+const NEAR := 200.0              # half the spots tried lie within this of you
+const SEEN := 250.0              # a boat further than this is not drawn (a few pixels, behind houses)
 var target := TARGET
-var radius := 400.0
+var radius := 500.0
 var focus := Vector3.ZERO
 var boats: Array = []             # {"boat": Boat, "pos": Vector2, "driver": bool, "kept": bool}
 var _scene: PackedScene
@@ -45,7 +46,7 @@ func _physics_process(dt: float) -> void:
 	_wait -= dt
 	if boats.size() < target and _wait <= 0.0:
 		_wait = 0.1
-		for k in 6:                      # a few spots a tick (many are a basin corner or too narrow)
+		for k in 10:                     # a few spots a tick (many are a basin corner or too narrow)
 			if boats.size() >= target:
 				break
 			_try_spawn(f, k % 2 == 0)
@@ -183,6 +184,10 @@ func add(p: Vector2, yaw: float, col := Color.TRANSPARENT) -> Dictionary:
 					var m2: StandardMaterial3D = m.duplicate()
 					m2.albedo_color = col
 					mi.set_surface_override_material(s, m2)
+	for mi: MeshInstance3D in hull:       # (not drawn from afar)
+		mi.visibility_range_end = SEEN
+		mi.visibility_range_end_margin = 20.0
+		mi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 	boat.add_child(model)
 	add_child(boat)
 	boat.global_transform = Transform3D(Basis(Vector3.UP, yaw), Vector3(p.x, Boat.WATER_Y, p.y))

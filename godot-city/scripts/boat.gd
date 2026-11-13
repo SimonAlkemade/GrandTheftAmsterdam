@@ -150,6 +150,8 @@ func water_y(p: Vector3) -> float:
 
 
 func _physics_process(dt: float) -> void:
+	if freeze:                           # (moored far off, held still: nothing to work out)
+		return
 	_t += dt
 	# Boats do not fly: a hard knock on a quay wall may not throw one up out of
 	# the canal (the collision solver can push a lot harder than water lifts).

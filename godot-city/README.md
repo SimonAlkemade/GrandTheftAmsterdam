@@ -183,8 +183,9 @@ shrinks its textures to 1024 px WebP (9.5 MB to 0.3 MB). The original is in
 ## Boats
 
 Sloepen, the open motor launches of the canals, lie moored along the quays
-around you: 36 of them within 400 m, half looked for on the canals within
-150 m of you, so the canal you walk up to has boats on it
+around you: 120 of them within 500 m, half looked for on the canals within
+200 m of you, so the canals you walk along are lined with boats to take (the
+far ones are frozen and do no physics, and are not drawn beyond 250 m)
 (`scripts/boats.gd` puts them on the loaded canal polygons, along the canal,
 close to a quay and 9 m apart; `tests/fleet_test.gd`). E from the quay or the water takes the helm:
 W/S are the throttle (and astern), A/D swing the outboard, Shift opens it up.
