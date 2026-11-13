@@ -3,25 +3,21 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://b1b8jtaw7bsqk"
-path="res://.godot/imported/monument obelisk 3d model.glb-30d21fbc5f5680f25d87d04de300c7ac.scn"
+uid="uid://m1q5t30idb17"
+path="res://.godot/imported/dam_monument.glb-81aeb8d8b85807246fa7aa81bce6b181.scn"
 
 [deps]
 
-source_file="res://monument obelisk 3d model.glb"
-dest_files=["res://.godot/imported/monument obelisk 3d model.glb-30d21fbc5f5680f25d87d04de300c7ac.scn"]
+source_file="res://models/dam_monument.glb"
+dest_files=["res://.godot/imported/dam_monument.glb-81aeb8d8b85807246fa7aa81bce6b181.scn"]
 
 [params]
 
 nodes/root_type=""
 nodes/root_name=""
-nodes/root_script=null
-mesh_library/use_node_names_as_mesh_names=false
-array_mesh/deduplicate_surfaces=true
 nodes/apply_root_scale=true
 nodes/root_scale=1.0
 nodes/import_as_skeleton_bones=false
-nodes/use_name_suffixes=true
 nodes/use_node_type_suffixes=true
 meshes/ensure_tangents=true
 meshes/generate_lods=true
@@ -36,10 +32,6 @@ animation/trimming=false
 animation/remove_immutable_tracks=true
 animation/import_rest_as_RESET=false
 import_script/path=""
-materials/extract=0
-materials/extract_format=0
-materials/extract_path=""
 _subresources={}
-gltf/naming_version=2
+gltf/naming_version=1
 gltf/embedded_image_handling=1
-gltf/texture_map_mode=1

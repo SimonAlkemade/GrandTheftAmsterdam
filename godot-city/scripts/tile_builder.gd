@@ -42,6 +42,23 @@ var surf := {}          # material name -> [PackedVector3Array, PackedVector3Arr
 var budget_usec := 0
 var _t0 := 0
 var walls := PackedVector3Array()
+## Circles (scene metres: [centre, radius]) where the city draws no house: a
+## landmark built by itself stands there (the National Monument on the Dam,
+## whose pylon and wall the data maps as buildings).
+static var cleared: Array = []
+
+
+static func _cleared(bd: Dictionary) -> bool:
+	if cleared.is_empty():
+		return false
+	var ring := pts(bd.r[0] if bd.has("r") else bd.g)
+	var c := Vector2.ZERO
+	for q in ring:
+		c += q / ring.size()
+	for k in cleared:
+		if c.distance_to(k[0]) < float(k[1]):
+			return true
+	return false
 
 
 static func pts(flat: Array) -> PackedVector2Array:
@@ -485,6 +502,9 @@ func build_tile(data: Dictionary) -> Dictionary:
 	var x0 := ti * tile_size; var z1 := -tj * tile_size; var z0 := -(tj + 1) * tile_size
 	var seed := absi(hash(Vector2i(ti, tj)))
 	var bl: Array = data.get("buildings", [])
+	if not cleared.is_empty():
+		bl = bl.filter(func(bd): return not _cleared(bd))
+		data["buildings"] = bl
 	for i in bl.size():
 		building(bl[i], i, seed)
 		await pause()

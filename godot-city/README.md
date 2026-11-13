@@ -159,6 +159,27 @@ the game's overview under its tiles.
     python -m unittest tests.test_compact_city
     godot --headless --path godot-city --script tests/compact_test.gd
 
+## The National Monument
+
+The white pylon on the Dam (`scripts/dam_monument.gd`) stands exactly where
+the city data puts it: the data maps its round platform as a 37 m circle cut
+out of the square in front of the Krasnapolsky, and the pylon's own footprint
+at its centre. Its sculpted front faces the Royal Palace along the axis of
+that footprint and of its curved wall's (22 degrees north of west), the wall
+raised in stone from its footprint behind it, on a two-step platform you walk
+or drive up; the pylon and the wall are solid. The data maps the pylon and
+the wall as buildings, so the city draws no house inside the platform
+(`TileBuilder.cleared`).
+
+The model came from a 3D generator with a few stray fragments round it;
+`tools/clean_model.gd` keeps its largest piece, stands it on the ground and
+shrinks its textures to 1024 px WebP (9.5 MB to 0.3 MB). The original is in
+`assets-src/landmarks/`:
+
+    godot --headless --path godot-city --script tools/clean_model.gd -- \
+        ../assets-src/landmarks/dam_monument_source.glb models/dam_monument.glb
+    godot --headless --path godot-city --script tests/monument_test.gd
+
 ## Boats
 
 Sloepen, the open motor launches of the canals, lie moored along the quays
