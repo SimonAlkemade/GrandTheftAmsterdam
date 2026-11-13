@@ -91,5 +91,10 @@ func _run() -> void:
 	var bm: Vector2 = s.compact_point(Mission.BLOEMENMARKT)
 	_check(absf(bm.distance_to(dam) - Mission.BLOEMENMARKT.distance_to(dam) * 0.45) < 1.0, "the Bloemenmarkt: 0.45 as far from the Dam (%.0f m)" % bm.distance_to(dam))
 	s.free()
+	# Which city you play: the whole of Amsterdam, unless you ask for the compact one.
+	var Main = load("res://scripts/main.gd")
+	_check(Main.city_dir({}) == "res://data/", "by default: the whole of Amsterdam")
+	_check(Main.city_dir({"city": "full"}) == "res://data/", "--city=full: the whole of Amsterdam")
+	_check(Main.city_dir({"city": "compact"}) == "res://data-compact/", "--city=compact: the compact city")
 	print("compact test: %d failed" % _fails)
 	quit(1 if _fails else 0)

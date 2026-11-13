@@ -106,8 +106,10 @@ or up to a boat and press E to climb aboard.
 
 ## The compact city
 
-The whole of Amsterdam (about 24 by 17 km, 4,080 chunks) is too big to play,
-so the game plays a compact Amsterdam made from it (`compact_city.py`, at the
+The game plays the whole of Amsterdam (about 24 by 17 km, 4,080 chunks, at
+its real size). A compact one was tried as the default and played: it did not
+feel like Amsterdam any more, so it is an option now, `--city=compact`
+(`Main.city_dir`). It is made from the full data (`compact_city.py`, at the
 repository root): the city inside the A10 ring, with Noord across the IJ and
 a tail out to the Johan Cruijff ArenA, at 0.45 of its size. It is drawn as a
 flat map too (`map/`).
@@ -143,8 +145,7 @@ flat map too (`map/`).
   given in the real city's metres (the Bloemenmarkt, the Damrak boat) where it
   now stands.
 
-It is 4.5 by 4.9 km, 256 chunks and 17 MB, against 92 MB. The full city is
-still there: `--city=full` plays it. The old island layout (the centre 1:1,
+It is 4.5 by 4.9 km, 256 chunks and 17 MB, against 92 MB. The old island layout (the centre 1:1,
 the rest warped in) is `--layout=v1`.
 
 **The map** (`map/amsterdam_game_map.svg`, and a 4096 px PNG) is the same

@@ -102,9 +102,7 @@ func _ready() -> void:
 		weather.set_now(args.weather)
 	clock_on = args.get("clock", "0" if args.has("shot") else "1") != "0"
 	streamer = Streamer.new()
-	# The compact Amsterdam by default (compact_city.py); --city=full for all of it.
-	if args.get("city", "compact") == "compact" and FileAccess.file_exists("res://data-compact/index.json"):
-		streamer.data_dir = "res://data-compact/"
+	streamer.data_dir = city_dir(args)
 	add_child(streamer)
 	streamer.setup(mats)
 	traffic = Traffic.new()
@@ -1092,3 +1090,11 @@ func _thousands(n: int) -> String:
 		out = "," + s.substr(s.length() - 3) + out
 		s = s.substr(0, s.length() - 3)
 	return s + out
+
+
+## Which city you play: the whole of Amsterdam, or with --city=compact the
+## compact one (compact_city.py), if it is there.
+static func city_dir(args: Dictionary) -> String:
+	if args.get("city", "full") == "compact" and FileAccess.file_exists("res://data-compact/index.json"):
+		return "res://data-compact/"
+	return "res://data/"
