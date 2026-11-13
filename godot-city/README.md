@@ -230,6 +230,21 @@ checks both models, the walk, the aim, the ragdoll and the walkers:
 
     godot --headless --path godot-city --script tests/characters_test.gd
 
+How everyone moves is `animate()` in `scripts/human.gd` (the models copy
+it). The gait is driven by distance: the stride grows with speed (about
+1.5 m walking at 1.5 m/s, 2.75 m running at 5 m/s) and the legs cycle as fast
+as the ground goes by, so the feet do not skate; walking blends into running
+by speed. In the stride the knee is near straight as the heel strikes and
+bends through the swing, the pelvis rides high over the planted leg, sways
+over it and turns with the leading leg, the shoulders turn back against it,
+the arms swing opposite the legs with the elbow bending more coming forward,
+and the head keeps looking ahead. Standing, people breathe, shift their
+weight from leg to leg every few seconds and now and then glance aside, each
+on their own timing, so a crowd is never in step; setting off eases in from
+straight knees. `tests/anim_test.gd` measures it:
+
+    godot --headless --path godot-city --script tests/anim_test.gd
+
 ## Mission 1: parcel courier
 
 As soon as you are on your feet the job starts. A yellow circle (with a beam
