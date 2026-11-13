@@ -3,25 +3,21 @@
 importer="scene"
 importer_version=1
 type="PackedScene"
-uid="uid://dvuvv0xbes7ko"
-path="res://.godot/imported/red lingerie character 3d model.glb-8d1af18a9c0eecb639fd76ca73d02463.scn"
+uid="uid://c5n50cakuud6s"
+path="res://.godot/imported/char_woman.glb-77374f26c0e1cb09166072701e7197ea.scn"
 
 [deps]
 
-source_file="res://red lingerie character 3d model.glb"
-dest_files=["res://.godot/imported/red lingerie character 3d model.glb-8d1af18a9c0eecb639fd76ca73d02463.scn"]
+source_file="res://models/char_woman.glb"
+dest_files=["res://.godot/imported/char_woman.glb-77374f26c0e1cb09166072701e7197ea.scn"]
 
 [params]
 
 nodes/root_type=""
 nodes/root_name=""
-nodes/root_script=null
-mesh_library/use_node_names_as_mesh_names=false
-array_mesh/deduplicate_surfaces=true
 nodes/apply_root_scale=true
 nodes/root_scale=1.0
 nodes/import_as_skeleton_bones=false
-nodes/use_name_suffixes=true
 nodes/use_node_type_suffixes=true
 meshes/ensure_tangents=true
 meshes/generate_lods=true
@@ -36,10 +32,6 @@ animation/trimming=false
 animation/remove_immutable_tracks=true
 animation/import_rest_as_RESET=false
 import_script/path=""
-materials/extract=0
-materials/extract_format=0
-materials/extract_path=""
 _subresources={}
-gltf/naming_version=2
+gltf/naming_version=1
 gltf/embedded_image_handling=1
-gltf/texture_map_mode=1

@@ -104,11 +104,68 @@ Fall into a
 canal and you swim (Shift for a faster crawl); swim to a quay to climb out,
 or up to a boat and press E to climb aboard.
 
+## The compact city
+
+The game plays the whole of Amsterdam (about 24 by 17 km, 4,080 chunks, at
+its real size). A compact one was tried as the default and played: it did not
+feel like Amsterdam any more, so it is an option now, `--city=compact`
+(`Main.city_dir`). It is made from the full data (`compact_city.py`, at the
+repository root): the city inside the A10 ring, with Noord across the IJ and
+a tail out to the Johan Cruijff ArenA, at 0.45 of its size. It is drawn as a
+flat map too (`map/`).
+
+- **Smaller, the same shape**: every position is brought 0.45 of the way to
+  the Dam, so the districts keep their places, the canal ring its shape and
+  the city its orientation. Streets keep their real widths (car streets at
+  least 6 m), so they stay drivable. The one deliberate distortion: south of
+  Zuid the way to the Arena is halved again, so the stadium sits 2.8 km from
+  the Dam rather than 3.3 km, with its district joined on.
+- **Fewer canals**: the wide water stays (the IJ, the Amstel, the harbours,
+  the lakes), and of the canals the named ones a player knows: the Singel,
+  Herengracht, Keizersgracht and Prinsengracht, the Singelgracht, the
+  Brouwersgracht, the Jordaan's and the Wallen's own, the docks. The rest
+  (75% of the canals' water) is filled in, its quays kept as streets. Canals
+  are widened back where they are free; beside a quay street (6 m at most) the
+  water stops at the kerb. Bridges are kept where a street still crosses
+  water.
+- **Simpler streets**: no footpaths, short bike paths or narrow side streets
+  outside the centre, and short dead ends pruned; 91% of the car streets'
+  length is one network.
+- **50,000 houses, the real ones**: each keeps its shape at 0.45 of its size
+  around its own centre, and its height and roof. Landmarks come first
+  (Centraal, the Royal Palace, the Westerkerk, the Rijksmuseum and the rest),
+  then the centre outwards. A house that lands on a street or in a canal steps
+  back off it (up to 6 m) or is left out, as is one that would overlap another.
+  The centre keeps every house that fits; the outer districts are thinned
+  evenly.
+- **An edge**: a green margin all round, the IJ running on into it, and you
+  are held 120 m out into it (on foot, swimming, by boat). 18 petrol stations:
+  those inside, and more from further out brought in along the edge.
+- **Fixed points move with it**: `streamer.compact_point()` puts a place
+  given in the real city's metres (the Bloemenmarkt, the Damrak boat) where it
+  now stands.
+
+It is 4.5 by 4.9 km, 256 chunks and 17 MB, against 92 MB. The old island layout (the centre 1:1,
+the rest warped in) is `--layout=v1`.
+
+**The map** (`map/amsterdam_game_map.svg`, and a 4096 px PNG) is the same
+data drawn flat, north up, with no labels, in a muted palette: beige and
+terracotta houses, landmarks darker, desaturated blue water, soft green
+parks, light-grey streets at their widths. `render_map` draws it, and
+Chromium (Playwright) rasterises it in tiles; the same drawing at 2048 px is
+the game's overview under its tiles.
+
+    python compact_city.py godot-city/data godot-city/data-compact   # ~6 min
+    python -m unittest tests.test_compact_city
+    godot --headless --path godot-city --script tests/compact_test.gd
+
 ## Boats
 
 Sloepen, the open motor launches of the canals, lie moored along the quays
-around you (`scripts/boats.gd` puts them on the loaded canal polygons, along
-the canal and close to a quay). E from the quay or the water takes the helm:
+around you: 36 of them within 400 m, half looked for on the canals within
+150 m of you, so the canal you walk up to has boats on it
+(`scripts/boats.gd` puts them on the loaded canal polygons, along the canal,
+close to a quay and 9 m apart; `tests/fleet_test.gd`). E from the quay or the water takes the helm:
 W/S are the throttle (and astern), A/D swing the outboard, Shift opens it up.
 E again steps you onto the quay, or into the water if there is none in reach;
 the boat stays where you left it. One sloep always lies at the Damrak quay by
@@ -141,6 +198,52 @@ trams and cyclists of the traffic ride over the hump (pitched on the ramps),
 the cars you drive climb it on their suspension, and lamps and benches on a
 bridge stand on its deck. Swimming under a bridge you climb out only at a
 quay, not up onto the bridge overhead.
+
+## The characters
+
+You are the man in the parka (`models/char_man.glb`), and one walker in six
+is the woman in red (`models/char_woman.glb`). Both came as static T-posed
+meshes (Tripo; the originals are in `assets-src/characters/` at the
+repository root) and are rigged by `blender/rig_character.py`: it fits a
+simple humanoid skeleton to the mesh (hips, spine, head, upper arms,
+forearms, hands, thighs, shins, feet: where the arms stick out, how wide the
+chest is, where the legs stand), welds the mesh and binds it with automatic
+weights (falling back to soft distance weights where Blender's bone heat
+finds no solution, as on the man's parka), lowers the arms to the sides as
+the rest pose, scales it (1.82 m and 1.70 m) and shrinks the texture to
+1024 px:
+
+    python blender/rig_character.py assets-src/characters/fashionable_man.glb godot-city/models/char_man.glb 1.82
+
+In the game (`scripts/skinned_person.gd`) the jointed figure is still built,
+invisibly, and everything keeps moving it as before (walking, running,
+jumping, swimming, aiming, driving, the ragdoll); every frame the model's
+bones copy its joints' rotations, and knocked down they follow the ragdoll's
+bodies. The pistol and the tulips sit in the model's hands. The copy is made
+late in each frame, after whatever posed the joints, so the model shows them
+all: aiming, carrying, your hands on a boat's wheel, and on your bike (the
+bike's rider is the man too) your feet on the pedals and hands on the grips.
+In a car, Canta, bus or tram you are inside, as before (their windows are dark). To swap in
+another character, rig its mesh the same way and point `YOU_MODEL` or
+`WOMAN_MODEL` in `scripts/walker.gd` at it. `tests/characters_test.gd`
+checks both models, the walk, the aim, the ragdoll and the walkers:
+
+    godot --headless --path godot-city --script tests/characters_test.gd
+
+How everyone moves is `animate()` in `scripts/human.gd` (the models copy
+it). The gait is driven by distance: the stride grows with speed (about
+1.5 m walking at 1.5 m/s, 2.75 m running at 5 m/s) and the legs cycle as fast
+as the ground goes by, so the feet do not skate; walking blends into running
+by speed. In the stride the knee is near straight as the heel strikes and
+bends through the swing, the pelvis rides high over the planted leg, sways
+over it and turns with the leading leg, the shoulders turn back against it,
+the arms swing opposite the legs with the elbow bending more coming forward,
+and the head keeps looking ahead. Standing, people breathe, shift their
+weight from leg to leg every few seconds and now and then glance aside, each
+on their own timing, so a crowd is never in step; setting off eases in from
+straight knees. `tests/anim_test.gd` measures it:
+
+    godot --headless --path godot-city --script tests/anim_test.gd
 
 ## Mission 1: parcel courier
 
@@ -389,7 +492,10 @@ What you drive is a real vehicle (Godot's VehicleBody3D, `scripts/vehicle_physic
 each wheel is a damped spring with tyre grip, the engine pulls through the
 driven wheels, and the body pitches under braking and acceleration and rolls
 in corners. It hits buildings, quay walls, bridge railings and the traffic
-around you, and a car that goes off a quay ends up on the canal bed. The bike
+around you, and a car that goes off a quay ends up on the canal bed: drive a
+car, Canta or bus into the water and a moment and a half later you are
+**WASTED** (the hospital bill, back at the start; the car stays in the canal,
+`tests/canal_test.gd`). Off a bike you only get wet: you swim. The bike
 leans by exactly the angle that balances its turn (tan lean = speed x yaw rate
 / g). Each chunk carries the collision floor for this: the street, bridge
 decks, quay walls and canal beds. The traffic itself stays on its routes, but
@@ -612,6 +718,7 @@ another size: `python chunk_godot_tiles.py godot-city/data 375`.
 - `scripts/traffic.gd`, `scripts/vehicle_models.gd`: traffic
 - `scripts/vehicle_physics.gd`: suspension, engine, brakes and steering for what you drive
 - `scripts/walker.gd`, `scripts/human.gd`: the player and pedestrians
+- `scripts/skinned_person.gd`: a rigged model (you, the woman in red) moved by the figure's joints
 - `scripts/ragdoll.gd`: a person knocked over, gone limp
 - `scripts/weather.gd`: the clock, sunshine, clouds and rain, wet streets
 - `scripts/sfx.gd`, `scripts/gun_fx.gd`, `scripts/juice.gd`: the sounds (made in code), the pistol's

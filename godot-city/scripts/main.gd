@@ -102,6 +102,7 @@ func _ready() -> void:
 		weather.set_now(args.weather)
 	clock_on = args.get("clock", "0" if args.has("shot") else "1") != "0"
 	streamer = Streamer.new()
+	streamer.data_dir = city_dir(args)
 	add_child(streamer)
 	streamer.setup(mats)
 	traffic = Traffic.new()
@@ -748,8 +749,9 @@ func _process(delta: float) -> void:
 		focus = walker.global_position
 		street_lights.focus = focus
 		grade.low = clampf((35.0 - walker.health) / 35.0, 0.0, 1.0)
-		if _damrak_boat.is_empty() and not streamer.tile_at(Vector3(DAMRAK_BOAT.x, 0, DAMRAK_BOAT.y)).is_empty():
-			_damrak_boat = boats.moor(DAMRAK_BOAT, Vector2(_walk_at.x, _walk_at.z))
+		var damrak: Vector2 = streamer.compact_point(DAMRAK_BOAT)
+		if _damrak_boat.is_empty() and not streamer.tile_at(Vector3(damrak.x, 0, damrak.y)).is_empty():
+			_damrak_boat = boats.moor(damrak, Vector2(_walk_at.x, _walk_at.z))
 		streamer.radius = WALK_RADIUS
 		traffic.player = walker.global_position if walker.vehicle == null else Vector3(1e9, 0, 1e9)
 		ui.prompt.text = walker.prompt
@@ -781,7 +783,7 @@ func _process(delta: float) -> void:
 	streamer.focus = focus
 	traffic.focus = focus
 	boats.focus = focus
-	boats.target = 14 if mode == "walk" else 0
+	boats.target = Boats.TARGET if mode == "walk" else 0
 	traffic.enabled = traffic_on and (mode == "walk" or cam.dist < 1600.0)
 	var s: Dictionary = streamer.stats()
 	var c: Dictionary = traffic.count()
@@ -1088,3 +1090,11 @@ func _thousands(n: int) -> String:
 		out = "," + s.substr(s.length() - 3) + out
 		s = s.substr(0, s.length() - 3)
 	return s + out
+
+
+## Which city you play: the whole of Amsterdam, or with --city=compact the
+## compact one (compact_city.py), if it is there.
+static func city_dir(args: Dictionary) -> String:
+	if args.get("city", "full") == "compact" and FileAccess.file_exists("res://data-compact/index.json"):
+		return "res://data-compact/"
+	return "res://data/"

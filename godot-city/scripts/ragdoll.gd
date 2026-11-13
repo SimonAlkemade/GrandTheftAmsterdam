@@ -14,6 +14,7 @@ const LAYER := 32               # ragdolls (people knocked down)
 const MASK := 1 | 2 | 4 | 8 | 16 | 32   # buildings, ground, traffic, your vehicle, you, other ragdolls
 
 var bodies: Array[RigidBody3D] = []
+var joint_body := {}            # the figure's joint -> the body that took it over
 var _moved := []                # [mesh, its parent on the figure, its transform there]
 var _human: Node3D
 var _still := 0.0
@@ -67,6 +68,8 @@ func restore() -> void:
 	_moved.clear()
 	if is_instance_valid(_human):
 		_human.visible = true
+		if _human.has_method("ragdolled"):
+			_human.ragdolled(null)          # (a skinned model: its bones back to the figure)
 	queue_free()
 
 
@@ -131,7 +134,11 @@ func _build(h: Node3D, vel: Vector3, spin: float) -> void:
 	for b in bodies:
 		b.linear_velocity = vel
 		b.angular_velocity = axis * spin * 3.0
-	h.visible = false               # what is left of it: the bare joints
+	joint_body = made
+	if h.has_method("ragdolled"):
+		h.ragdolled(self)               # a skinned model stays, its bones following the bodies
+	else:
+		h.visible = false               # what is left of it: the bare joints
 
 
 static func _box(size: Vector3) -> BoxShape3D:

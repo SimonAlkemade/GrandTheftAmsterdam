@@ -435,7 +435,7 @@ func _run() -> void:
 	mission.start_job(13)
 	var bg = mission.job
 	_check(said.has(bg.title) and bg.phase == "arm", "Mission 13: %s, '%s'" % [bg.title, bg.objective()])
-	crime.armed = true; crime.mag = 10
+	crime.armed = true; crime.mag = 10; crime.rounds = 99     # (no ammo bought at the shop meanwhile)
 	await _step(0.1)
 	_check(bg.phase == "rob" and mission.target.distance_to(crime.shop) < 0.1, "armed: '%s'" % bg.objective())
 	money = mission.money

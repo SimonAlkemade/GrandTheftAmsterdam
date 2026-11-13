@@ -887,7 +887,9 @@ func _wasted() -> void:
 	cars.clear()
 	walker.health = walker.MAX_HEALTH
 	walker.global_position = streamer.start_point()
-	announce.emit("WASTED", "The hospital bill: €%d. The pistol is gone." % bill)
+	var why: String = walker.wasted_by
+	walker.wasted_by = ""
+	announce.emit("WASTED", ((why + " ") if why != "" else "") + "The hospital bill: €%d. The pistol is gone." % bill)
 	caught.emit("WASTED")
 
 

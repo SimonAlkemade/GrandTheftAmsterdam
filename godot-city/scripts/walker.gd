@@ -11,6 +11,10 @@ extends CharacterBody3D
 
 const Human := preload("res://scripts/human.gd")
 const Ragdoll := preload("res://scripts/ragdoll.gd")
+const SkinnedPerson := preload("res://scripts/skinned_person.gd")
+const YOU_MODEL := "res://models/char_man.glb"          # you: the man in the parka
+const WOMAN_MODEL := "res://models/char_woman.glb"      # one walker in WOMAN_EVERY
+const WOMAN_EVERY := 6
 const Models := preload("res://scripts/vehicle_models.gd")
 const VPhys := preload("res://scripts/vehicle_physics.gd")
 const TileBuilder := preload("res://scripts/tile_builder.gd")
@@ -58,6 +62,9 @@ const HEAL_AFTER := 6.0         # seconds without harm before it comes back...
 const HEAL_RATE := 5.0          # ...this much a second
 const HIT_BY := 4.0             # m/s: a vehicle faster than this knocks you down
 var health := MAX_HEALTH
+var wasted_by := ""              # why you are wasted, if not from your wounds (Crime says it)
+const SINK_TIME := 1.5          # seconds a car, Canta or bus is in the water before you are wasted
+var _sunk_t := 0.0
 var stun := 0.0                 # seconds left lying on the ground (tasered, run over)
 var _since_hurt := 99.0
 var _rag = null                 # your own ragdoll while you are down
@@ -79,9 +86,16 @@ func setup(s, camera: Camera3D) -> void:
 	# (whose wheels and box would otherwise meet you inside it) never sees you.
 	collision_layer = 16
 	collision_mask = VPhys.WALL_LAYER
-	body = Human.new()
-	body.callv("build", LOOK.duplicate())   # callv garbles a read-only (const) array
+	if ResourceLoader.exists(YOU_MODEL):
+		body = SkinnedPerson.new()
+		body.build_model(YOU_MODEL)
+	else:
+		body = Human.new()
+		body.callv("build", LOOK.duplicate())   # callv garbles a read-only (const) array
 	add_child(body)
+	# What you hold sits in your hands: the model's, or the figure's.
+	var grip_l: Node3D = body.grip_l if "grip_l" in body else body.el_l
+	var grip_r: Node3D = body.grip_r if "grip_r" in body else body.el_r
 	_parcel = MeshInstance3D.new()
 	var box := BoxMesh.new(); box.size = Vector3(0.42, 0.3, 0.34)
 	var card := StandardMaterial3D.new(); card.albedo_color = Color("b8874f"); card.roughness = 0.9
@@ -102,16 +116,21 @@ func setup(s, camera: Camera3D) -> void:
 		_bouquet.add_child(a); _bouquet.add_child(b)
 	_bouquet.position = Vector3(0, -0.34, -0.04)
 	_bouquet.rotation.x = PI                 # held stems down, the flowers up out of the fist
+	if grip_l != body.el_l:                  # (in the model's hand: along the hand, not the forearm)
+		_bouquet.position = Vector3(0, 0.05, 0)
+		_bouquet.rotation = Vector3.ZERO
 	_bouquet.visible = false
-	body.el_l.add_child(_bouquet)
+	grip_l.add_child(_bouquet)
 	# The pistol, in the right hand (along the forearm: aimed, it points ahead).
 	_gun = MeshInstance3D.new()
 	var gb := BoxMesh.new(); gb.size = Vector3(0.04, 0.2, 0.11)
 	var gm := StandardMaterial3D.new(); gm.albedo_color = Color("1c1d20"); gm.metallic = 0.6; gm.roughness = 0.4
 	_gun.mesh = gb; _gun.material_override = gm
 	_gun.position = Vector3(0, -0.36, -0.05)
+	if grip_r != body.el_r:
+		_gun.position = Vector3(0, 0.06, 0)
 	_gun.visible = false
-	body.el_r.add_child(_gun)
+	grip_r.add_child(_gun)
 	visible = false
 
 
@@ -126,8 +145,14 @@ func enter(at: Vector3, yaw: float) -> void:
 	cam.fov = 68.0
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	for i in 24:
-		var p := {"h": Human.new(), "pos": Vector3.ZERO, "heading": 0.0, "speed": 1.1 + _rng.randf() * 0.45, "turn": 0.0, "stag": 0.0}
-		p.h.random_look(_rng)
+		var p := {"h": null, "pos": Vector3.ZERO, "heading": 0.0, "speed": 1.1 + _rng.randf() * 0.45, "turn": 0.0, "stag": 0.0}
+		if i % WOMAN_EVERY == 0 and ResourceLoader.exists(WOMAN_MODEL):
+			p.h = SkinnedPerson.new()               # the woman in red
+			p.h.build_model(WOMAN_MODEL)
+			p.model = "woman"
+		else:
+			p.h = Human.new()
+			p.h.random_look(_rng)
 		get_parent().add_child(p.h)
 		_place(p, true)
 		peds.append(p)
@@ -215,6 +240,7 @@ func _free(p: Vector3) -> bool:
 func _physics_process(delta: float) -> void:
 	if not active:
 		return
+	_island_edge()
 	_mouse_idle += delta
 	_since_hurt += delta
 	if _since_hurt > HEAL_AFTER and health > 0.0:
@@ -421,6 +447,7 @@ func _get_in() -> void:
 	elif DRIVE.has(v.kind) and (v.kind != "bus" or v.has("body") or _at_cab(v, here)):
 		v.driver = true
 		v.parked = false
+		_sunk_t = 0.0
 		if not v.has("body"):
 			_physical(v, v.kind == "bike")
 		var b: VehicleBody3D = v.body
@@ -428,7 +455,7 @@ func _get_in() -> void:
 		global_position = Vector3(b.global_position.x, 0.0, b.global_position.z)
 		heading = VPhys.heading(b)
 		if v.kind == "bike":             # you, on the saddle
-			v.rig.add_rider(null, LOOK)
+			v.rig.add_rider(null, LOOK, YOU_MODEL if ResourceLoader.exists(YOU_MODEL) else "")   # (you, the man)
 			v.rig.set_parked(false)
 	else:
 		v.rider = true
@@ -563,6 +590,11 @@ func _drive(dt: float) -> void:
 	car_speed = VPhys.drive(b, vehicle.kind, 0.0 if sunk else throttle, steer, Input.is_physical_key_pressed(KEY_SPACE),
 		Input.is_physical_key_pressed(KEY_SHIFT), dt)
 	b.linear_damp = 2.5 if sunk else 0.0
+	# Into the water with it (not a bike: off that you swim): once it has gone in, WASTED.
+	_sunk_t = _sunk_t + dt if sunk and vehicle.kind != "bike" else 0.0
+	if _sunk_t >= SINK_TIME and health > 0.0 and crime != null and crime.state != "off":
+		wasted_by = "You drove into the canal."
+		health = 0.0
 	heading = VPhys.heading(b)
 	var f := Vector2(-sin(heading), -cos(heading))
 	vehicle.pos = Vector2(p.x, p.z) + f * spec.box.z * 0.5   # the front, for the traffic behind you
@@ -685,6 +717,51 @@ const KNOCK_VEHICLE := 3.0       # m/s
 const KNOCK_YOU := 4.5           # m/s: a sprint (a run is 6.2, a walk 1.7)
 const MAX_RAGDOLLS := 8          # at once; past that a knock is only a stagger
 const GET_UP := 2.0              # seconds lying still before getting up
+
+
+## The compact city has an edge: its outline (index.compact.edge, a little way
+## out into the green margin and the IJ round it), or for the old island
+## layout a circle EDGE beyond its shore. Past it you are held on it, on foot,
+## swimming, by boat, in whatever you drive.
+const EDGE := 120.0             # metres out from the island's shore
+var _edge := PackedVector2Array()   # the compact city's outline, scene metres (index.compact.edge)
+func _island_edge() -> void:
+	var ix = streamer.get("index") if streamer else null
+	if typeof(ix) != TYPE_DICTIONARY or not ix.has("compact"):
+		return
+	var c: Dictionary = ix.compact
+	var n: Node3D = self
+	if vehicle != null and vehicle.kind == "boat":
+		n = vehicle.boat
+	elif vehicle != null and vehicle.has("body"):
+		n = vehicle.body
+	var at := Vector2(n.global_position.x, n.global_position.z)
+	var back := at
+	if c.has("edge"):                            # the city's outline (layout v2): held on it
+		if _edge.is_empty():
+			var f: Array = c.edge
+			for k in range(0, f.size() - 1, 2):
+				_edge.append(Vector2(float(f[k]) / 10.0, -float(f[k + 1]) / 10.0))
+		if Geometry2D.is_point_in_polygon(at, _edge):
+			return
+		var best := INF
+		for k in _edge.size():
+			var q := Geometry2D.get_closest_point_to_segment(at, _edge[k], _edge[(k + 1) % _edge.size()])
+			if q.distance_squared_to(at) < best:
+				best = q.distance_squared_to(at); back = q
+	else:                                        # the island (layout v1): a circle
+		var centre := Vector2(float(c.centre[0]) / 10.0, -float(c.centre[1]) / 10.0)
+		var edge: float = float(c.island) / 10.0 + EDGE
+		var d := at - centre
+		if d.length() <= edge:
+			return
+		back = centre + d.normalized() * edge
+	n.global_position = Vector3(back.x, n.global_position.y, back.y)
+	if n is RigidBody3D:                     # (no further out: what it had outwards is gone)
+		var o := (at - back).normalized()
+		var out := Vector3(o.x, 0, o.y)
+		var rb: RigidBody3D = n
+		rb.linear_velocity -= out * maxf(rb.linear_velocity.dot(out), 0.0)
 
 
 ## Knocks `p` over with velocity `vel`; false (a stagger instead) when too many
