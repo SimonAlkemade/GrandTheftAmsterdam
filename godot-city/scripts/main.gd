@@ -783,7 +783,7 @@ func _process(delta: float) -> void:
 	streamer.focus = focus
 	traffic.focus = focus
 	boats.focus = focus
-	boats.target = 14 if mode == "walk" else 0
+	boats.target = Boats.TARGET if mode == "walk" else 0
 	traffic.enabled = traffic_on and (mode == "walk" or cam.dist < 1600.0)
 	var s: Dictionary = streamer.stats()
 	var c: Dictionary = traffic.count()

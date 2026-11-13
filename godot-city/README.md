@@ -162,8 +162,10 @@ the game's overview under its tiles.
 ## Boats
 
 Sloepen, the open motor launches of the canals, lie moored along the quays
-around you (`scripts/boats.gd` puts them on the loaded canal polygons, along
-the canal and close to a quay). E from the quay or the water takes the helm:
+around you: 36 of them within 400 m, half looked for on the canals within
+150 m of you, so the canal you walk up to has boats on it
+(`scripts/boats.gd` puts them on the loaded canal polygons, along the canal,
+close to a quay and 9 m apart; `tests/fleet_test.gd`). E from the quay or the water takes the helm:
 W/S are the throttle (and astern), A/D swing the outboard, Shift opens it up.
 E again steps you onto the quay, or into the water if there is none in reach;
 the boat stays where you left it. One sloep always lies at the Damrak quay by

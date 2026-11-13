@@ -1,5 +1,6 @@
 extends Node3D
-## Sloepen moored in the canals around you, each a floating Boat you can take.
+## Sloepen moored in the canals around you (TARGET of them, within `radius`,
+## half the spots tried close to you), each a floating Boat you can take.
 ##
 ## Boats appear on canal water within `radius` of `focus` (lying along the
 ## canal, close to a quay, apart from each other) and go again when you are
@@ -9,8 +10,10 @@ const Boat := preload("res://scripts/boat.gd")
 const COLORS := ["e6e6e2", "e6e6e2", "1d2e45", "e6e6e2", "2d4a34", "7a1e1e"]
 
 var streamer
-var target := 14
-var radius := 320.0
+const TARGET := 36               # boats moored round you as you walk
+const NEAR := 150.0              # half the spots tried lie within this of you
+var target := TARGET
+var radius := 400.0
 var focus := Vector3.ZERO
 var boats: Array = []             # {"boat": Boat, "pos": Vector2, "driver": bool, "kept": bool}
 var _scene: PackedScene
@@ -41,8 +44,11 @@ func _physics_process(dt: float) -> void:
 			b.boat.freeze = b.pos.distance_to(f) > 180.0 and not b.driver
 	_wait -= dt
 	if boats.size() < target and _wait <= 0.0:
-		_wait = 0.25
-		_try_spawn(f)
+		_wait = 0.1
+		for k in 6:                      # a few spots a tick (many are a basin corner or too narrow)
+			if boats.size() >= target:
+				break
+			_try_spawn(f, k % 2 == 0)
 
 
 # The canal outlines of the loaded chunks that reach within `radius` of f.
@@ -61,13 +67,17 @@ func _canals(f: Vector2) -> void:
 				_water.append([rings[0], box.intersection(near)])
 
 
-func _try_spawn(f: Vector2) -> void:
+func _try_spawn(f: Vector2, close := false) -> void:
 	if f.distance_to(_water_at) > 40.0 or _water.is_empty() and Engine.get_physics_frames() % 120 == 0:
 		_canals(f)
 	if _water.is_empty():
 		return
 	var w: Array = _water[_rng.randi() % _water.size()]
 	var box: Rect2 = w[1]
+	if close:                            # the canal you are at, not only ones far off
+		box = box.intersection(Rect2(f - Vector2.ONE * NEAR, Vector2.ONE * NEAR * 2.0))
+		if box.size == Vector2.ZERO:
+			return
 	var p := box.position + Vector2(_rng.randf() * box.size.x, _rng.randf() * box.size.y)
 	if p.distance_to(f) < 12.0 or p.distance_to(f) > radius:
 		return
