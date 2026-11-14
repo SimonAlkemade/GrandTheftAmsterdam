@@ -295,6 +295,19 @@ straight knees. `tests/anim_test.gd` measures it:
 
     godot --headless --path godot-city --script tests/anim_test.gd
 
+## Getting off at a stop
+
+Riding a tram or a bus (E at its door), a list of well-known stops shows on
+the right, nearest first, the one you are at left out: Centraal Station, the
+Dam, Leidseplein, Rembrandtplein, Museumplein, Waterlooplein, De Pijp (the
+Albert Cuypstraat), the Vondelpark (the Overtoom), Artis and the Westerkerk.
+Press its number (1-9): the screen fades to black, you get off, and you are
+put down on that street once the city round it has loaded; the screen fades
+back in with the stop's name. E still gets you off where you are. (Trams and
+buses here have no fixed routes, they choose at every junction, so the list
+is where they go, not their next stops.) `scripts/transit.gd`;
+`tests/transit_test.gd`.
+
 ## The first mission: the container yard
 
 The game starts with it (`scripts/jobs/m00_harbour.gd`, the yard

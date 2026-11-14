@@ -23,6 +23,7 @@ const Minimap := preload("res://scripts/minimap.gd")
 const Mission := preload("res://scripts/mission.gd")
 const Boats := preload("res://scripts/boats.gd")
 const DamMonument := preload("res://scripts/dam_monument.gd")
+const Transit := preload("res://scripts/transit.gd")
 const Weather := preload("res://scripts/weather.gd")
 const Sfx := preload("res://scripts/sfx.gd")
 const Juice := preload("res://scripts/juice.gd")
@@ -83,6 +84,8 @@ const HINTS := {
 # always waits at its quay there (scene metres: x east, z south).
 const DAMRAK_BOAT := Vector2(172.0, -205.0)
 var _damrak_boat := {}
+var _stop_pressed := false     # (--stop)
+var _stop_t := 0.0
 
 
 func _ready() -> void:
@@ -127,6 +130,10 @@ func _ready() -> void:
 	walker = Walker.new()
 	add_child(walker)
 	walker.setup(streamer, cam)
+	var transit := Transit.new()               # getting off a tram or bus at a stop (keys 1-9)
+	add_child(transit)
+	transit.setup(walker, streamer)
+	walker.transit = transit
 	walker.traffic = traffic
 	walker.boats = boats
 	traffic.street_y = streamer.street_y
@@ -806,6 +813,12 @@ func _process(delta: float) -> void:
 			_test_run()
 		if args.has("vehicle") and walker.active:
 			_test_vehicle(args.vehicle)
+		# --stop=N: once riding a tram or bus, press N (Transit: get off at that stop).
+		if args.has("stop") and walker.transit != null and walker.transit.riding() and not _stop_pressed:
+			_stop_t += delta
+			if _stop_t > 2.0:
+				_stop_pressed = true
+				print("stop: %s" % str(walker.transit.pick(int(args.stop) - 1)))
 		if args.has("crime") and walker.active:
 			_test_crime()
 		if args.has("mission") and (walker.active or _mis_step == 3):   # step 3 is in the map view

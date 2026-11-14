@@ -60,6 +60,7 @@ var task := {}
 ## A scripted action in progress (perform()): a pose held, moving from -> to.
 var _act := {}
 var held: Node3D = null         # something in your right hand (hold())
+var transit                     # getting off a tram or bus at a stop (Transit): keys 1-9 while riding
 var tulips := 0                # bunches of tulips to sell (Mission 3): a bouquet in your hand
 # Health: a taser's darts, or a car running you over, take some off; it comes
 # back by itself after a while without harm. At 0 you are wasted (Crime).
@@ -188,6 +189,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if stun > 0.0 and not (event is InputEventMouseMotion):
 		return                           # (down: no getting in, no shooting)
+	if transit != null and transit.busy:
+		return                           # (on the way to a stop: the screen is black)
+	if transit != null and event is InputEventKey and event.pressed and not event.echo \
+			and event.physical_keycode >= KEY_1 and event.physical_keycode <= KEY_9:
+		if transit.pick(event.physical_keycode - KEY_1):
+			return
 	# Look with the captured mouse, or by dragging when it is free (trackpads).
 	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_E:
 		if not _act.is_empty():
@@ -250,6 +257,9 @@ func _free(p: Vector3) -> bool:
 
 func _physics_process(delta: float) -> void:
 	if not active:
+		return
+	if transit != null and transit.busy:
+		_camera(delta)                   # (held still while the screen is black and the stop loads)
 		return
 	_island_edge()
 	_mouse_idle += delta
