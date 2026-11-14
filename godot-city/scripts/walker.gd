@@ -54,6 +54,12 @@ var car_speed := 0.0
 var _mouse_idle := 10.0
 var _rack_bike := {}
 var carrying := false          # a parcel (the courier mission)
+## A mission's own use of E on foot (cut the fence, take the bag): {"prompt": "E  ...", "do": Callable}.
+## It comes before getting into things while it is set.
+var task := {}
+## A scripted action in progress (perform()): a pose held, moving from -> to.
+var _act := {}
+var held: Node3D = null         # something in your right hand (hold())
 var tulips := 0                # bunches of tulips to sell (Mission 3): a bouquet in your hand
 # Health: a taser's darts, or a car running you over, take some off; it comes
 # back by itself after a while without harm. At 0 you are wasted (Crime).
@@ -184,6 +190,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		return                           # (down: no getting in, no shooting)
 	# Look with the captured mouse, or by dragging when it is free (trackpads).
 	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_E:
+		if not _act.is_empty():
+			return                       # (busy: cutting, crawling)
+		if vehicle == null and not task.is_empty():
+			(task.do as Callable).call()
+			return
 		if vehicle != null:
 			_get_out()
 		else:
@@ -269,6 +280,25 @@ func _physics_process(delta: float) -> void:
 		_peds(delta)
 		_camera(delta)
 		return
+	if not _act.is_empty():                  # a scripted action: the pose, the way, no say in it
+		_act.t += delta
+		var f: float = minf(1.0, float(_act.t) / float(_act.len))
+		global_position = (_act.from as Vector3).lerp(_act.to, f)
+		heading = float(_act.heading)
+		state = String(_act.state)
+		body.rotation.y = heading
+		body.position.y = 0.0
+		body.animate(delta, state, (_act.from as Vector3).distance_to(_act.to) / float(_act.len))
+		prompt = ""
+		_peds(delta)
+		_camera(delta)
+		if f >= 1.0:
+			var done: Callable = _act.done
+			_act = {}
+			state = "idle"; speed = 0.0; vy = 0.0; grounded = true
+			if done.is_valid():
+				done.call()
+		return
 	var here := Vector2(global_position.x, global_position.z)
 	var near: Dictionary = traffic.nearest(here, ENTER_RANGE) if traffic else {}
 	prompt = "" if near.is_empty() else {"car": "E  drive this car", "bus": "E  ride the bus", "tram": "E  ride the tram", "bike": "E  ride this bike", "canta": "E  drive this Canta"}[near.kind]
@@ -282,6 +312,8 @@ func _physics_process(delta: float) -> void:
 		_rack_bike = streamer.parked_bike(here, 1.6)
 	if prompt == "" and not _rack_bike.is_empty() and _rack_bike.at.distance_to(here) < 1.8:
 		prompt = "E  take this bike"
+	if not task.is_empty():
+		prompt = String(task.prompt)
 	var key := func(k: Key, alt: Key) -> float:
 		return 1.0 if Input.is_physical_key_pressed(k) or Input.is_physical_key_pressed(alt) else 0.0
 	var ix: float = key.call(KEY_D, KEY_RIGHT) - key.call(KEY_A, KEY_LEFT)
@@ -1119,3 +1151,31 @@ func _peds(delta: float) -> void:
 			continue
 		p.h.position = Vector3(p.pos.x, y, p.pos.z)
 		p.h.rotation = Vector3(0, p.heading, 0)
+
+
+## A scripted action: hold the pose `st` (the figure's "cut", "crawl", ...)
+## for `seconds`, moving from `from` to `to` facing `face` (a heading), then
+## call `done`. Input waits meanwhile.
+func perform(st: String, seconds: float, from: Vector3, to: Vector3, face: float, done := Callable()) -> void:
+	_act = {"state": st, "t": 0.0, "len": maxf(seconds, 0.05), "from": from, "to": to, "heading": face, "done": done}
+	speed = 0.0
+	global_position = from
+
+
+func performing() -> bool:
+	return not _act.is_empty()
+
+
+## Something in your right hand (the bolt cutters, the bag), placed by `xf` in the hand's frame.
+func hold(n: Node3D, xf := Transform3D.IDENTITY) -> void:
+	drop_held()
+	held = n
+	var at: Node3D = body.get("grip_r") if body.get("grip_r") != null else body
+	at.add_child(n)
+	n.transform = xf
+
+
+func drop_held() -> void:
+	if held != null and is_instance_valid(held):
+		held.queue_free()
+	held = null

@@ -143,6 +143,12 @@ func animate(dt: float, state: String, speed: float) -> void:
 			_untwist(dt)
 			_lerp(sh_l, 2.8, dt, 10); _lerp(sh_r, 2.8, dt, 10); _lerp(hp_l, 1.2, dt, 10); _lerp(kn_l, -1.6, dt, 10)
 			rotation.x += (0.0 - rotation.x) * minf(1.0, dt * 8)
+		"cut":
+			_untwist(dt)
+			_kneel_and_cut(dt)
+		"crawl":
+			_untwist(dt)
+			_crawl(dt, speed)
 		_:
 			_on_feet(dt, speed)
 
@@ -224,3 +230,38 @@ func _untwist(dt: float) -> void:
 	spine.rotation.y += (0.0 - spine.rotation.y) * k
 	spine.rotation.z += (0.0 - spine.rotation.z) * k
 	head.rotation = head.rotation * (1.0 - k)
+
+
+## Down on the right knee at a fence, bolt cutters in both hands, squeezing
+## them shut and open again (CUT_BEAT, as the cutters' own "cut" animation).
+const CUT_BEAT := 0.8
+func _kneel_and_cut(dt: float) -> void:
+	var k := minf(1.0, dt * 8.0)
+	rotation.x += (0.0 - rotation.x) * k
+	hips.position.y += (0.5 - hips.position.y) * k
+	_lerp(hp_l, 1.45, dt, 8)          # the left foot planted forward, thigh level
+	_lerp(kn_l, -1.5, dt, 8)
+	_lerp(hp_r, -0.15, dt, 8)         # the right knee on the ground, shin back along it
+	_lerp(kn_r, -1.75, dt, 8)
+	_lerp(spine, -0.32, dt, 8)        # leaning in to the fence
+	var beat := 0.5 - 0.5 * cos(t / CUT_BEAT * TAU)     # 0 open .. 1 squeezed
+	_lerp(sh_l, 1.0 + 0.1 * beat, dt, 14); _lerp(sh_r, 1.0 + 0.1 * beat, dt, 14)
+	_lerp(el_l, 0.45, dt, 10); _lerp(el_r, 0.45, dt, 10)
+	sh_l.rotation.z = 0.08 - 0.22 * beat                # the hands come together on the handles
+	sh_r.rotation.z = -0.08 + 0.22 * beat
+	head.rotation.x += (0.25 - head.rotation.x) * k     # (looking down at the wire)
+
+
+## Flat on the ground, pulling along on the elbows, knees working (under a fence).
+func _crawl(dt: float, speed: float) -> void:
+	var k := minf(1.0, dt * 6.0)
+	rotation.x += (-1.42 - rotation.x) * k             # (tipped forward, head first: -x)
+	hips.position.y += (0.93 - hips.position.y) * k
+	phase += dt * (2.0 + speed * 4.0)
+	var s := sin(phase)
+	sh_l.rotation.x = 2.5 + 0.45 * s; sh_r.rotation.x = 2.5 - 0.45 * s     # (overhead, lying: forward)
+	el_l.rotation.x = 1.1 - 0.4 * s; el_r.rotation.x = 1.1 + 0.4 * s
+	hp_l.rotation.x = 0.35 - 0.35 * s; hp_r.rotation.x = 0.35 + 0.35 * s
+	kn_l.rotation.x = -0.9 + 0.4 * s; kn_r.rotation.x = -0.9 - 0.4 * s
+	sh_l.rotation.z = 0.25; sh_r.rotation.z = -0.25
+	head.rotation.x += (-0.9 - head.rotation.x) * k     # (head up, looking ahead)

@@ -46,6 +46,9 @@ const JOBS := [
 	preload("res://scripts/jobs/m13_big_one.gd"),
 ]
 const FIRST_JOB := 4
+## The very first mission: the container yard in the eastern harbour (job 0); the courier follows it.
+const FIRST_MISSION := preload("res://scripts/jobs/m00_harbour.gd")
+const COURIER_NEXT := -1                 # (job_no while waiting to start the courier)
 
 var streamer
 var traffic
@@ -95,8 +98,19 @@ func setup(s, t, w) -> void:
 	add_child(_ribbon)
 
 
+## The game's start: the first mission (the container yard); the courier comes after it.
 func start() -> void:
 	delivered = 0; money = 0
+	start_job(0)
+
+
+## The courier job straight away.
+func start_courier() -> void:
+	_clear()
+	if job:
+		job.queue_free()
+		job = null
+	delivered = 0
 	announce.emit("MISSION 1: PARCEL COURIER", "Pick up parcels and deliver them across Amsterdam")
 	_wait = 3.0
 	state = "pickup"
@@ -112,8 +126,29 @@ func start_tulips() -> void:
 	announce.emit("MISSION 3: TULIPS", "Fetch a stock of tulips at the Bloemenmarkt and sell them to tourists")
 
 
-## Mission `n` (4 on) straight away.
+## Mission `n` straight away: 0 the container yard, 4 on the jobs.
 func start_job(n: int) -> void:
+	if n == 0:
+		start_job_node(FIRST_MISSION.new(), 0)
+		return
+	var i := n - FIRST_JOB
+	if i < 0 or i >= JOBS.size():
+		_clear()
+		_set_carrying(false)
+		if job:
+			job.queue_free()
+			job = null
+		state = "free"
+		announce.emit("ALL JOBS DONE", "€%d. Amsterdam is yours" % money)
+		if jobs_done > 0:                          # (played through, not jumped to: the credits)
+			add_child(load("res://scripts/credits.gd").new())
+		return
+	_jobs_unlocked = true
+	start_job_node(JOBS[i].new(), n)
+
+
+## Run the job `j` as mission number `n` (`yard_at`: where the yard goes, for a test).
+func start_job_node(j, n: int, yard_at = null) -> void:
 	_clear()
 	_set_carrying(false)
 	for t in tourists.duplicate():
@@ -121,17 +156,11 @@ func start_job(n: int) -> void:
 	if job:
 		job.queue_free()
 		job = null
-	_jobs_unlocked = true
-	var i := n - FIRST_JOB
-	if i < 0 or i >= JOBS.size():
-		state = "free"
-		announce.emit("ALL JOBS DONE", "€%d. Amsterdam is yours" % money)
-		if jobs_done > 0:                          # (played through, not jumped to: the credits)
-			add_child(load("res://scripts/credits.gd").new())
-		return
 	job_no = n
-	job = JOBS[i].new()
+	job = j
 	job.m = self
+	if yard_at != null and "yard_origin" in job:
+		job.yard_origin = yard_at
 	add_child(job)
 	job.finished.connect(_job_over)
 	state = "job"
@@ -145,10 +174,11 @@ func _job_over(ok: bool, why: String) -> void:
 	_clear()
 	if ok:
 		money += job.reward
-		jobs_done += 1
+		if n >= FIRST_JOB:
+			jobs_done += 1
 		announce.emit("MISSION PASSED", "+ €%d  ·  %s" % [job.reward, why])
 		job.queue_free(); job = null
-		state = "job_wait"; _job_wait = 5.0; job_no = n + 1
+		state = "job_wait"; _job_wait = 5.0; job_no = COURIER_NEXT if n == 0 else n + 1
 	else:
 		announce.emit("MISSION FAILED", why + ". Try again")
 		job.queue_free(); job = null
@@ -206,7 +236,10 @@ func _process(delta: float) -> void:
 	if state == "job_wait":
 		_job_wait -= delta
 		if _job_wait <= 0.0:
-			start_job(job_no)
+			if job_no == COURIER_NEXT:
+				start_courier()
+			else:
+				start_job(job_no)
 		return
 	if state == "job":
 		if job:

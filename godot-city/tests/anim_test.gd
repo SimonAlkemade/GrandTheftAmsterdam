@@ -119,5 +119,21 @@ func _run() -> void:
 		h.animate(DT, "idle", 0.0)
 	var twist: float = absf(h.hips.rotation.y) + absf(h.hips.rotation.z) + absf(h.spine.rotation.y) + absf(h.head.rotation.y)
 	_check(twist < 0.12, "standing again, the walk's twist is gone (%.3f rad)" % twist)
+	# 6. Kneeling at the fence with the bolt cutters: low, both hands forward, squeezing.
+	var k = _person(5)
+	for i in 90:
+		k.animate(DT, "cut", 0.0)
+	_check(k.hips.position.y < 0.65 and k.rotation.x < 0.3, "cutting: down on one knee (hips at %.2f m)" % k.hips.position.y)
+	_check(k.sh_l.rotation.x > 0.5 and k.sh_r.rotation.x > 0.5, "both hands forward on the handles")
+	var squeeze := _range(func(p): return p.sh_r.rotation.z, k, "cut", 0.0, 60)
+	_check(squeeze > 0.05, "and squeezing them (%.2f rad)" % squeeze)
+	# 7. Crawling under the fence: flat on the ground, arms and legs working in turns.
+	var c = _person(6)
+	for i in 60:
+		c.animate(DT, "crawl", 0.6)
+	_check(absf(c.rotation.x) > 1.2 and c.head.global_position.z < c.global_position.z - 1.0 and c.head.global_position.y < 0.6,
+		"crawling: lying low, head first, the way it goes (-Z) (head at %s)" % c.head.global_position)
+	var reach := _range(func(p): return p.sh_l.rotation.x - p.sh_r.rotation.x, c, "crawl", 0.6, 120)
+	_check(reach > 0.4, "the arms reach forward in turns")
 	print("anim test: %d failed" % _fails)
 	quit(1 if _fails else 0)

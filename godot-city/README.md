@@ -267,6 +267,33 @@ straight knees. `tests/anim_test.gd` measures it:
 
     godot --headless --path godot-city --script tests/anim_test.gd
 
+## The first mission: the container yard
+
+The game starts with it (`scripts/jobs/m00_harbour.gd`, the yard
+`scripts/harbour_yard.gd`): a duffel bag is waiting in one of the open
+containers of a fenced yard in the eastern harbour, on Zeeburgereiland by
+the bunker station (free quay ground in the city data). Get there (any car
+will do), and:
+
+- **cut the fence**: in the yellow circle on the street side, E. You go down
+  on one knee with bolt cutters in both hands, squeezing them shut and open
+  (the cutters' own "cut" animation), and the cut flap of chain link peels
+  up and back ("peel");
+- **crawl under it**: E again. Flat on the ground, head first;
+- **find the bag**: three containers of the north row stand open, facing the
+  open ground by the hole; the bag lies in one of them (a different one each
+  time). E takes it;
+- **crawl back out** the way you came and bring it to the van waiting outside.
+
+Passed: €400, and the parcel courier follows. Busted or wasted on it: tried
+again. The fence and the closed containers are solid; the open ones you walk
+into. The models are made in Blender by `blender/make_harbour.py`: a 40 ft
+container (corrugated, hinged doors), a chain-link fence panel with barbed
+wire and its cut version with the flap, the bolt cutters and the bag:
+
+    python blender/make_harbour.py godot-city/models
+    godot --headless --path godot-city --script tests/harbour_test.gd
+
 ## Mission 1: parcel courier
 
 As soon as you are on your feet the job starts. A yellow circle (with a beam

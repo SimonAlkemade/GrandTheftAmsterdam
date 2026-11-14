@@ -70,7 +70,7 @@ func _run() -> void:
 	w.set_physics_process(false); traffic.set_process(false); mission.set_process(false)
 	rng.seed = 7
 	_stand(Vector3(0, 0, 0))
-	mission.start()
+	mission.start_courier()
 	# 1. The fifth parcel delivered ends the courier job.
 	mission.delivered = Mission.PARCELS - 1
 	mission.state = "deliver"; mission.time_left = 60.0
