@@ -549,6 +549,8 @@ func _integrate(r: Dictionary) -> void:
 		var arrays := []
 		arrays.resize(Mesh.ARRAY_MAX)
 		arrays[Mesh.ARRAY_VERTEX] = s[0]; arrays[Mesh.ARRAY_NORMAL] = s[1]; arrays[Mesh.ARRAY_TEX_UV] = s[2]
+		if s.size() > 3 and (s[3] as PackedColorArray).size() == (s[0] as PackedVector3Array).size():
+			arrays[Mesh.ARRAY_COLOR] = s[3]           # (a house's tint, from the panoramas)
 		var m: ArrayMesh = meshes[g]
 		m.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 		m.surface_set_material(m.get_surface_count() - 1, mats.get_mat(name))

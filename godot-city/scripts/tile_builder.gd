@@ -42,6 +42,16 @@ var surf := {}          # material name -> [PackedVector3Array, PackedVector3Arr
 var budget_usec := 0
 var _t0 := 0
 var walls := PackedVector3Array()
+## Each facade style's wall colour (textures/facade_N.png, measured by
+## pano_colours.wall_colour, the rule the panoramas are measured by).
+const WALL_RGB := [Color8(142, 59, 42), Color8(106, 58, 42), Color8(75, 48, 38), Color8(165, 87, 47),
+	Color8(42, 45, 46), Color8(125, 133, 132), Color8(201, 180, 138)]
+## The facade materials are brightened by TINT_K (Materials) and their faces
+## carry vertex colours of 1/TINT_K (as the texture) up to 1 (TINT_K x as
+## bright), in linear light (_tint; stored as sRGB, as the renderer reads
+## them): a house with a measured colour ("c") is tinted towards it.
+const TINT_K := 3.0
+var _tint := Color(1.0 / TINT_K, 1.0 / TINT_K, 1.0 / TINT_K)
 ## Circles (scene metres: [centre, radius]) where the city draws no house: a
 ## landmark built by itself stands there (the National Monument on the Dam,
 ## whose pylon and wall the data maps as buildings).
@@ -71,8 +81,41 @@ static func pts(flat: Array) -> PackedVector2Array:
 
 func _s(mat: String) -> Array:
 	if not surf.has(mat):
-		surf[mat] = [PackedVector3Array(), PackedVector3Array(), PackedVector2Array()]
+		surf[mat] = [PackedVector3Array(), PackedVector3Array(), PackedVector2Array(), PackedColorArray()]
 	return surf[mat]
+
+
+## CIE Lab of an sRGB colour (for finding the nearest style).
+static func lab(c: Color) -> Vector3:
+	var l := c.srgb_to_linear()
+	var x := (0.4124 * l.r + 0.3576 * l.g + 0.1805 * l.b) / 0.95047
+	var y := 0.2126 * l.r + 0.7152 * l.g + 0.0722 * l.b
+	var z := (0.0193 * l.r + 0.1192 * l.g + 0.9505 * l.b) / 1.08883
+	var f := func(t: float) -> float: return pow(t, 1.0 / 3.0) if t > 0.008856 else 7.787 * t + 16.0 / 116.0
+	var fx: float = f.call(x); var fy: float = f.call(y); var fz: float = f.call(z)
+	return Vector3(116.0 * fy - 16.0, 500.0 * (fx - fy), 200.0 * (fy - fz))
+
+
+## The facade style that can be brought nearest c, and the vertex colour that
+## brings it there (texture x tint x TINT_K, in linear light; the tint is
+## bounded, so a style too far off cannot reach c and another is chosen).
+static func style_for(c: Color) -> Array:
+	var t := c.srgb_to_linear()
+	var lc := lab(c)
+	var best := 0
+	var best_d := INF
+	var best_tint := Color.WHITE
+	for k in WALL_RGB.size():
+		var w: Color = (WALL_RGB[k] as Color).srgb_to_linear()
+		var tint := Color(
+			clampf(t.r / maxf(w.r, 0.002), 0.05, TINT_K) / TINT_K,
+			clampf(t.g / maxf(w.g, 0.002), 0.05, TINT_K) / TINT_K,
+			clampf(t.b / maxf(w.b, 0.002), 0.05, TINT_K) / TINT_K)
+		var got := Color(w.r * tint.r * TINT_K, w.g * tint.g * TINT_K, w.b * tint.b * TINT_K).linear_to_srgb()
+		var d := lab(got).distance_to(lc) + lab(WALL_RGB[k]).distance_to(lc) * 0.05   # (of equals, the style nearest by itself)
+		if d < best_d:
+			best_d = d; best = k; best_tint = tint
+	return [best, best_tint]
 
 
 # One triangle facing n (Godot draws clockwise faces as front faces).
@@ -82,6 +125,9 @@ func tri(mat: String, a: Vector3, b: Vector3, c: Vector3, n: Vector3, ua: Vector
 		var t := b; b = c; c = t
 		var tu := ub; ub = uc; uc = tu
 	s[0].append(a); s[0].append(b); s[0].append(c)
+	# (Only the upper walls are tinted. The renderer reads vertex colours as sRGB: stored so.)
+	var col := _tint.linear_to_srgb() if mat.begins_with("facade_") else Color.WHITE
+	s[3].append(col); s[3].append(col); s[3].append(col)
 	s[1].append(n); s[1].append(n); s[1].append(n)
 	# Images have v = 0 at the top row; the layouts below count v upward.
 	s[2].append(Vector2(ua.x, 1.0 - ua.y)); s[2].append(Vector2(ub.x, 1.0 - ub.y)); s[2].append(Vector2(uc.x, 1.0 - uc.y))
@@ -115,6 +161,8 @@ func mats_for(bd: Dictionary, i: int, seed: int) -> Dictionary:
 	if int(bd.get("k", 0)) == 5:
 		return {"ground": "boat", "upper": "boat", "trim": "boat", "roof": "roof_flat", "flat": "roof_flat"}
 	var s := h % STYLES
+	if bd.has("c"):                      # measured from the panoramas: the nearest style
+		s = int(style_for(_rgb(bd.c))[0])
 	var shop := bd.has("s") or int(bd.get("k", 0)) == 2
 	return {
 		"ground": ("ground_shop_%d" % ((h >> 4) % SHOP_STYLES)) if shop else ("ground_home_%d" % s),
@@ -158,7 +206,17 @@ func wall(m: Dictionary, a: Vector2, b: Vector2, y0: float, top: float, n: Vecto
 	return run + length
 
 
+static func _rgb(c: Array) -> Color:
+	return Color8(int(c[0]), int(c[1]), int(c[2]))
+
+
 func building(bd: Dictionary, i: int, seed: int) -> void:
+	_tint = style_for(_rgb(bd.c))[1] if bd.has("c") else Color(1.0 / TINT_K, 1.0 / TINT_K, 1.0 / TINT_K)
+	_building(bd, i, seed)
+	_tint = Color(1.0 / TINT_K, 1.0 / TINT_K, 1.0 / TINT_K)
+
+
+func _building(bd: Dictionary, i: int, seed: int) -> void:
 	var m := mats_for(bd, i, seed)
 	var y0 := -1.1 if bd.has("w") else 0.0
 	if bd.has("g"):

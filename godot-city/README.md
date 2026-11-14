@@ -159,6 +159,34 @@ the game's overview under its tiles.
     python -m unittest tests.test_compact_city
     godot --headless --path godot-city --script tests/compact_test.gd
 
+## House colours from the street panoramas
+
+In the centre (2 km round the Dam, some 25,000 buildings) each house is the
+colour the City of Amsterdam's open 360-degree street panoramas show it in
+(`pano_colours.py`, at the repository root). For each house its widest street
+wall is cut out, straight on, of the panorama that sees it best
+(`amsterdam/streetview.py`), and the colour of its upper floors measured:
+the largest patch of one colour, past the windows, the sky over the roofline,
+the shopfront below and any tree in front. A cut-out that is mostly sky (the
+panorama did not really see the wall) or leaves is no answer; such a house,
+and one no panorama sees, takes the colour of its measured neighbours within
+30 m. The panorama camera sees everything a little cyan and flat: one
+correction for the whole collection takes the cast out and gives the colour
+back, and a wall that still comes out blue is taken to be shade or glass
+(grey stone), not paint.
+
+In the game (`scripts/tile_builder.gd`) a house with a measured colour gets
+the facade texture that can be brought nearest it, and its upper walls are
+tinted to it by vertex colour (the windows, frames and brick of the texture
+stay; the shopfront and roof are left as they are). Houses outside the area
+are as before. The service is `api.data.amsterdam.nl` (the images on
+`t1.data.amsterdam.nl`): the environment this runs in must allow both.
+
+    python pano_colours.py godot-city/data                  # ~25 min: lists, fetches, measures
+    python pano_colours.py godot-city/data --recalibrate    # the colours again from out/pano_colours.json
+    python -m unittest tests.test_pano_colours
+    godot --headless --path godot-city --script tests/colour_test.gd
+
 ## The National Monument
 
 The white pylon on the Dam (`scripts/dam_monument.gd`) stands exactly where

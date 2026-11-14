@@ -51,9 +51,15 @@ func _plain(c: Color, rough := 0.85, metal := 0.0) -> StandardMaterial3D:
 	return m
 
 
+const TINT_K := 3.0                 # (TileBuilder.TINT_K)
+
+
 func build() -> void:
 	for i in 7:
 		lib["facade_%d" % i] = _textured("facade_%d" % i, 0.82, true, true)
+		# (Tinted per house by vertex colour, TileBuilder.TINT_K: a measured colour from the panoramas.)
+		lib["facade_%d" % i].vertex_color_use_as_albedo = true
+		lib["facade_%d" % i].albedo_color = Color(TINT_K, TINT_K, TINT_K).linear_to_srgb()   # (TINT_K in linear light)
 		lib["ground_home_%d" % i] = _textured("ground_home_%d" % i, 0.8, true, true)
 		lib["trim_%d" % i] = _plain(Color(TRIM[i]), 0.7)
 	for i in 6:
