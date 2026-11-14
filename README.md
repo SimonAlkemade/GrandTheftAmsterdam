@@ -5,6 +5,11 @@ you can walk, cycle and drive around in, GTA-style.
 
 ![Riding a bike on the Damrak](shots-godot/side-in.png)
 
+**Play it in the browser: https://simonalkemade.github.io/GrandTheftAmsterdam/**
+(a current Chrome, Edge, Firefox or Safari on a computer; about 50 MB to load).
+To update it, run `GODOT=/path/to/godot tools/publish_pages.sh`: it exports the
+web build and replaces the `gh-pages` branch GitHub Pages serves it from.
+
 - **On foot** from the Dam, with pedestrians, a round minimap and street names.
 - **Traffic** on the real street, bike-path and tram network: cars, GVB buses,
   three-section trams, cyclists and red Cantas.
