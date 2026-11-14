@@ -1,0 +1,151 @@
+<!doctype html>
+<!-- The page GitHub Pages serves the web build from (tools/publish_pages.sh fills in the sizes). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Grand Theft Amsterdam</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&family=Instrument+Sans:wght@400;600&display=swap">
+<style>
+/* Layout: the game fills the window; a canal-at-night loading card sits over it until the city is ready. */
+:root {
+  --night: #0c161d;      /* canal water after dark */
+  --card: #13212a;
+  --ink: #eef2f1;
+  --muted: #94a7ad;
+  --lamp: #ffcf6e;       /* street-lamp sodium */
+  --xxx: #d8262f;        /* the red of the Andreaskruisen */
+  --display: "Big Shoulders Display", "Arial Narrow", Impact, sans-serif;
+  --body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { margin: 0; background: var(--night); color: var(--ink); font-family: var(--body); overflow: hidden; }
+#canvas { display: block; position: fixed; inset: 0; width: 100%; height: 100%; outline: none; background: var(--night); }
+#cover {
+  position: fixed; inset: 0; display: grid; place-items: center;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-bottom, 0px));
+  background: radial-gradient(120% 80% at 50% 110%, #1b3340 0%, var(--night) 60%);
+  transition: opacity .6s ease;
+}
+#cover.gone { opacity: 0; pointer-events: none; }
+.card { width: min(440px, 100%); display: grid; gap: 18px; }
+.crosses { display: flex; gap: 8px; color: var(--xxx); font: 900 28px/1 var(--display); letter-spacing: .04em; }
+h1 { margin: 0; font: 900 clamp(48px, 12vw, 84px)/.88 var(--display); text-transform: uppercase; letter-spacing: .01em; text-wrap: balance; }
+h1 span { color: var(--lamp); }
+p { margin: 0; color: var(--muted); line-height: 1.5; max-width: 60ch; }
+.bar { height: 6px; background: #ffffff1a; border-radius: 3px; overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--lamp); transition: width .2s; }
+#status { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; min-height: 1.4em; }
+.keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13px; color: var(--muted); }
+kbd { font: 600 12px/1 var(--body); color: var(--ink); border: 1px solid #ffffff33; border-bottom-width: 2px; border-radius: 4px; padding: 3px 6px; white-space: nowrap; }
+.keys dt { display: flex; gap: 4px; flex-wrap: wrap; }
+.keys dd { margin: 0; align-self: center; }
+#hint {
+  position: fixed; left: 50%; top: max(70px, env(safe-area-inset-top, 0px)); transform: translateX(-50%);
+  background: #0c161dcc; border: 1px solid #ffffff22; border-radius: 999px; padding: 8px 16px;
+  font-size: 13px; pointer-events: none; transition: opacity .4s; white-space: nowrap;
+}
+#hint[hidden] { display: none !important; }
+.err { color: #ff8f8f; }
+@media (prefers-reduced-motion: reduce) { #cover, .bar i, #hint { transition: none; } }
+</style>
+</head>
+<body>
+<canvas id="canvas" tabindex="0">Your browser does not support the canvas element.</canvas>
+
+<div id="cover">
+  <div class="card">
+    <div class="crosses" aria-hidden="true">XXX</div>
+    <h1>Amsterdam <span>on foot</span></h1>
+    <p>285,000 buildings from open map data, with trams, GVB buses, cars, Cantas and bikes on the real streets, all of them on their springs, and sloepen moored in the canals, under sun, clouds and rain, through day and night. Your first job: deliver five parcels along the yellow route, then sell tulips from the Bloemenmarkt to the tourists. Or buy a pistol at the gun shop, the blue circle, and see how long you last against the police.</p>
+    <div class="bar" role="progressbar" aria-label="Loading"><i id="fill"></i></div>
+    <div id="status">Loading the engine...</div>
+    <dl class="keys">
+      <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>walk (or the arrow keys)</dd>
+      <dt><kbd>Shift</kbd></dt><dd>run</dd>
+      <dt><kbd>Space</kbd></dt><dd>jump</dd>
+      <dt><kbd>Click</kbd></dt><dd>capture the mouse to look around (Esc frees it)</dd>
+      <dt><kbd>E</kbd></dt><dd>get on a bike, in a car, Canta, bus or tram, or take a boat (from the quay or swimming); again to get out</dd>
+      <dt><kbd>W</kbd><kbd>S</kbd><kbd>Space</kbd></dt><dd>driving: W drives, S brakes then reverses, Space is the handbrake</dd>
+      <dt><kbd>E</kbd></dt><dd>at a bus's front door: drive it; at a tram's front cab: drive it on its rails (A/D pick the branch at the points)</dd>
+      <dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>at the helm: throttle and outboard; Shift for full power</dd>
+      <dt><kbd>Click</kbd><kbd>R</kbd></dt><dd>with a pistol (lying in the street, orange, 10 rounds; or from the gun shop): shoot and reload. Shooting brings the police with their tasers (the stars and your health, top left). Shoot a car enough and its tank goes, and a red gas canister goes too</dd>
+      <dt><kbd>G</kbd></dt><dd>throw a grenade (green, lying in the street like the pistols)</dd>
+      <dt><kbd>F</kbd></dt><dd>throw a Molotov cocktail (red-orange); shoot a petrol station's pumps to blow it up</dd>
+      <dt><kbd>M</kbd></dt><dd>map view with the tram button, and buttons to set off a test explosion</dd>
+    </dl>
+  </div>
+</div>
+<div id="hint" hidden>Click to look &middot; WASD or arrows &middot; E to get in a vehicle or boat &middot; M map</div>
+
+<script>
+// The engine and the game pack, fetched here so the loading bar can count them.
+const PARTS = {
+  "index.wasm": ["engine/index.wasm"],
+  "index.pck": ["engine/index.pck"],
+};
+const TOTAL = 43699190 + 4004592;
+let loaded = 0;
+const fill = document.getElementById("fill");
+const statusEl = document.getElementById("status");
+function progress(n, label) {
+  loaded += n;
+  fill.style.width = Math.min(100, loaded / TOTAL * 100).toFixed(1) + "%";
+  statusEl.textContent = label + " " + (loaded / 1e6).toFixed(1) + " of " + (TOTAL / 1e6).toFixed(1) + " MB";
+}
+async function download(url) {
+  const r = await realFetch(url);
+  if (!r.ok) throw new Error(url + " returned " + r.status);
+  const reader = r.body.getReader();
+  const chunks = [];
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    progress(value.length, "Downloading:");
+  }
+  return new Blob(chunks);
+}
+const realFetch = window.fetch.bind(window);
+window.fetch = async function (input, init) {
+  const url = typeof input === "string" ? input : input.url;
+  const name = url.split(/[?#]/)[0].split("/").pop();
+  if (PARTS[name]) {
+    const blobs = await Promise.all(PARTS[name].map(download));
+    const type = name.endsWith(".wasm") ? "application/wasm" : "application/octet-stream";
+    const blob = new Blob(blobs, { type });
+    return new Response(blob, { status: 200, headers: { "Content-Type": type, "Content-Length": String(blob.size) } });
+  }
+  return realFetch(input, init);
+};
+</script>
+<script src="engine/index.js"></script>
+<script>
+const engine = new Engine({
+  args: [], canvasResizePolicy: 2, ensureCrossOriginIsolationHeaders: false, executable: "engine/index",
+  experimentalVK: false, fileSizes: { "engine/index.pck": 4004592, "engine/index.wasm": 43699190 },
+  focusCanvas: true, gdextensionLibs: [],
+});
+const cover = document.getElementById("cover");
+const hint = document.getElementById("hint");
+const missing = Engine.getMissingFeatures({ threads: false });
+if (missing.length) {
+  statusEl.innerHTML = '<span class="err">This browser is missing: ' + missing.join(", ") + ". Try a current Chrome, Edge, Firefox or Safari.</span>";
+} else {
+  engine.startGame({
+    onProgress: (cur, total) => { if (total && cur >= total) statusEl.textContent = "Starting..."; },
+  }).then(() => {
+    statusEl.textContent = "Loading the streets around the Dam...";
+    // The game shows its own loading text; reveal it once the first frame is up.
+    setTimeout(() => { cover.classList.add("gone"); hint.hidden = false; }, 600);
+  }).catch((err) => {
+    statusEl.innerHTML = '<span class="err">The game could not start: ' + String(err && err.message || err) + "</span>";
+  });
+}
+document.getElementById("canvas").addEventListener("mousedown", () => { hint.hidden = true; }, { once: true });
+</script>
+</body>
+</html>
