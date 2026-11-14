@@ -24,6 +24,7 @@ class OpenStreet:
 	func stats() -> Dictionary: return {"ready": 1, "loading": 0, "buildings": 0}
 
 var _fails := 0
+var _tiles := {}               # (the full data's tiles, read once)
 var w
 var traffic
 var transit
@@ -78,30 +79,66 @@ func _key(k: Key) -> void:
 	w._unhandled_input(e)
 
 
-# Whether a road of `name` in the full city data passes within `r` metres of p (data decimetres).
-func _on_street(name: String, p: Vector2, r: float) -> bool:
+# The full city data's chunks round p (data decimetres): the tile it is in and its neighbours.
+func _chunks_round(p: Vector2) -> Array:
 	var ix = JSON.parse_string(FileAccess.get_file_as_string("res://data/index.json"))
 	var size: float = float(ix.tile) * 10.0
-	var key := "%d_%d" % [int(floor(p.x / size)), int(floor(p.y / size))]
-	var t = JSON.parse_string(FileAccess.get_file_as_string("res://data/tiles/%s.json" % key))
-	if t == null: return false
-	for c in t.chunks.values():
-		for rd in c.get("roads", []):
-			if rd[3] != name: continue
-			var f: Array = rd[2]
-			for k in range(0, f.size() - 1, 2):
-				if Vector2(f[k], f[k + 1]).distance_to(p) < r * 10.0: return true
+	var out := []
+	for di in [-1, 0, 1]:
+		for dj in [-1, 0, 1]:
+			var key := "%d_%d" % [int(floor(p.x / size)) + di, int(floor(p.y / size)) + dj]
+			if not _tiles.has(key):
+				var path := "res://data/tiles/%s.json" % key
+				_tiles[key] = JSON.parse_string(FileAccess.get_file_as_string(path)) if FileAccess.file_exists(path) else null
+			if _tiles[key] != null: out.append_array(_tiles[key].chunks.values())
+	return out
+
+
+# How far (metres) the nearest place called `name` is from p, in the full city data.
+func _to_place(name: String, p: Vector2, chunks: Array) -> float:
+	var best := INF
+	for c in chunks:
+		for pl in c.get("places", []):
+			if pl[0] == name:
+				best = minf(best, Vector2(pl[2], pl[3]).distance_to(p) / 10.0)
+	return best
+
+
+# Whether p stands in a building or in the water.
+func _blocked(p: Vector2, chunks: Array) -> bool:
+	for c in chunks:
+		for bd in c.get("buildings", []):
+			var r: Array = bd.r[0] if bd.has("r") else bd.g
+			var poly := PackedVector2Array()
+			for k in range(0, r.size() - 1, 2): poly.append(Vector2(r[k], r[k + 1]))
+			if Geometry2D.is_point_in_polygon(p, poly): return true
+		for w in c.get("water", []):
+			var r: Array = w.r[0]
+			var poly := PackedVector2Array()
+			for k in range(0, r.size() - 1, 2): poly.append(Vector2(r[k], r[k + 1]))
+			if Geometry2D.is_point_in_polygon(p, poly): return true
 	return false
 
 
 func _run() -> void:
 	w.set_physics_process(false); traffic.set_process(false)
-	# 1. The stops: each on its street in the real data.
-	var all_on := true
+	# 1. The stops: each at its real place in the city data, on open ground.
+	const AT := {"Centraal Station": ["Stationsplein", 40.0], "Rembrandtplein": ["Rembrandtplein", 40.0],
+		"Artis": ["Artisplein", 40.0], "De Pijp": ["Albert Cuyp Market", 40.0], "Westerkerk": ["Westerkerk", 60.0],
+		"Dam": ["Koninklijk Paleis Amsterdam", 120.0], "Leidseplein": ["Leidseplein Theater", 120.0],
+		"Museumplein": ["Van Gogh Museum", 150.0], "Waterlooplein": ["Double M Waterlooplein", 40.0]}
+	const PARK_GATE := Vector2(-9031, -14238)              # the Vondelpark's outline at its eastern tip
+	var all_at := true
 	for st in Transit.STOPS:
-		if not _on_street(st[1], Vector2(st[2], st[3]), 30.0):
-			all_on = false; print("  not on %s: %s" % [st[1], st[0]])
-	_check(Transit.STOPS.size() == 10 and all_on, "ten stops, each on its own street (Stationsplein, Leidseplein, ...)")
+		var p := Vector2(st[1], st[2])
+		var chunks := _chunks_round(p)
+		var off: float = PARK_GATE.distance_to(p) / 10.0 if st[0] == "Vondelpark" else _to_place(AT[st[0]][0], p, chunks)
+		var limit: float = 40.0 if st[0] == "Vondelpark" else AT[st[0]][1]
+		var blocked := _blocked(p, chunks)
+		if off > limit or blocked:
+			all_at = false
+			print("  %s: %.0f m from its place (at most %.0f)%s" % [st[0], off, limit, ", in a building or the water" if blocked else ""])
+	_check(Transit.STOPS.size() == 10 and all_at, "ten stops, each at its real place (the station's front square, the park gate...) on open ground")
 	# 2. On the test grid, stops of its own: two near, the rest farther.
 	transit.stops = [["Here", Vector2(10, 0)], ["Near", Vector2(330, -150)], ["Far", Vector2(-300, 300)], ["Middle", Vector2(320, 0)]]
 	var l: Array = transit.stops_from(Vector2(0, 0))

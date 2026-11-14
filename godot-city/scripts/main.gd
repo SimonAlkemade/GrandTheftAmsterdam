@@ -813,12 +813,17 @@ func _process(delta: float) -> void:
 			_test_run()
 		if args.has("vehicle") and walker.active:
 			_test_vehicle(args.vehicle)
-		# --stop=N: once riding a tram or bus, press N (Transit: get off at that stop).
+		# --stop=N (or a stop's name): once riding a tram or bus, get off at that stop (Transit).
 		if args.has("stop") and walker.transit != null and walker.transit.riding() and not _stop_pressed:
 			_stop_t += delta
 			if _stop_t > 2.0:
 				_stop_pressed = true
-				print("stop: %s" % str(walker.transit.pick(int(args.stop) - 1)))
+				if String(args.stop).is_valid_int():
+					print("stop: %s" % str(walker.transit.pick(int(args.stop) - 1)))
+				else:                        # --stop="Centraal Station": that one, by name
+					for st in walker.transit.stops:
+						if st[0] == args.stop:
+							walker.transit.ride_to(st[0], st[1]); print("stop: %s" % st[0])
 		if args.has("crime") and walker.active:
 			_test_crime()
 		if args.has("mission") and (walker.active or _mis_step == 3):   # step 3 is in the map view

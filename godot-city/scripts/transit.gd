@@ -6,18 +6,19 @@ extends CanvasLayer
 ## and buses here have no fixed routes: they choose at every junction. These
 ## are the places they go to.)
 
-## [stop, its street, x, y]: data decimetres, a point on that street in the city data.
+## [stop, x, y]: data decimetres, at the place itself in the city data (its square,
+## its market, its gate), on open ground.
 const STOPS := [
-	["Centraal Station", "Stationsplein", 1829, 5075],
-	["Dam", "Dam", -1914, -1032],
-	["Leidseplein", "Leidseplein", -9121, -11591],
-	["Rembrandtplein", "Rembrandtplein", 355, -9540],
-	["Museumplein", "Museumplein", -8627, -19200],
-	["Waterlooplein", "Waterlooplein", 3403, -7500],
-	["De Pijp", "Albert Cuypstraat", -1531, -20964],
-	["Vondelpark", "Overtoom", -15358, -14198],
-	["Artis", "Plantage Middenlaan", 11262, -8831],
-	["Westerkerk", "Westermarkt", -7543, 542],
+	["Centraal Station", 3297, 4009],     # the Stationsplein, the square in front of the station
+	["Dam", -1800, -1450],                # the square, between the Royal Palace and the National Monument
+	["Leidseplein", -8350, -11250],       # the square, by the Stadsschouwburg and the cafés
+	["Rembrandtplein", 926, -9575],
+	["Museumplein", -8900, -17900],       # the middle of it: the Rijksmuseum, the Van Gogh Museum, the Concertgebouw round it
+	["Waterlooplein", 4700, -6900],       # the market square
+	["De Pijp", -11, -20435],             # the Albert Cuyp Market
+	["Vondelpark", -9200, -14300],        # the main gate, on the Stadhouderskade
+	["Artis", 11923, -8983],              # the Artisplein, at the zoo's gate
+	["Westerkerk", -7543, 542],           # the Westermarkt, in front of the church
 ]
 const NEAR := 300.0            # metres: a stop this close is where you are
 const SHOWN := 9               # keys 1-9
@@ -40,7 +41,7 @@ func setup(w, s) -> void:
 	streamer = s
 	stops.clear()
 	for st in STOPS:
-		var p := Vector2(float(st[2]) / 10.0, -float(st[3]) / 10.0)
+		var p := Vector2(float(st[1]) / 10.0, -float(st[2]) / 10.0)
 		if s != null and s.has_method("compact_point"):
 			p = s.compact_point(p)
 		stops.append([st[0], p])
